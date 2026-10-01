@@ -1,0 +1,43 @@
+name: Update Homebrew formula
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: homebrew-formula
+  cancel-in-progress: false
+jobs:
+  update:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Read latest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name)
+          mkdir -p "$RUNNER_TEMP/aigc-homebrew"
+          gh release download "$tag" --pattern SHA256SUMS --dir "$RUNNER_TEMP/aigc-homebrew"
+          python3 scripts/update-homebrew.py --tag "$tag" --checksums "$RUNNER_TEMP/aigc-homebrew/SHA256SUMS"
+      - name: Check formula syntax
+        run: ruby -c Formula/aigc.rb
+      - name: Commit updated formula
+        run: |
+          if git diff --quiet -- Formula/aigc.rb; then
+            echo 'Formula already matches the latest release.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Formula/aigc.rb
+          git commit -m 'Update Homebrew formula for latest release'
+          git push origin HEAD:main

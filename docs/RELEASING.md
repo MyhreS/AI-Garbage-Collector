@@ -25,6 +25,23 @@ Only the publishing job has repository write permission. Release files persist u
 
 Release binaries currently have no Developer ID signing or notarization. Checksums verify archive integrity against the release manifest; they do not replace publisher signing.
 
+## Homebrew formula
+
+The repository is also a custom Homebrew tap: `Formula/aigc.rb` selects the published binary and checksum for each Mac architecture. The formula template is `scripts/aigc.rb.in`.
+
+After a successful release, **Update Homebrew formula** reads the latest published release and its checksum manifest, regenerates the formula, checks Ruby syntax, and commits changes to `main`. It uses the repository's built-in token; no separate tap repository or personal token is needed. Reading the latest release prevents an older release rerun from downgrading the formula.
+
+Use **Actions → Update Homebrew formula → Run workflow** to refresh it manually, including after changing the template. If repository rules later block direct pushes to `main`, the update job will fail visibly and the formula update must be merged through the allowed process. The release binaries remain available.
+
+A local update uses:
+
+```sh
+python3 scripts/update-homebrew.py --tag v0.1.0 --checksums /path/to/SHA256SUMS
+ruby -c Formula/aigc.rb
+```
+
+The formula has no test block and the workflow runs no tests. Homebrew installation does not start the service; users opt in with `brew services start myhres/aigc/aigc`.
+
 ## Local build storage
 
 Reuse `target` while building. At task completion, preserve requested executables outside `target`, then remove owned build/scratch output if no active build needs it. Keep shared Cargo caches available to other projects.

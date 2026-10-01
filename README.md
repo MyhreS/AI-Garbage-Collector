@@ -10,7 +10,39 @@ No cloud environment, subscription, account, or AI model. A release installs as 
 
 ## Install
 
-macOS only. Apple Silicon and Intel release artifacts are built by the release workflow. The release installer requires a published GitHub release:
+Requires macOS 13 or newer. Apple Silicon and Intel binaries are available.
+
+### Homebrew
+
+```sh
+brew tap myhres/aigc https://github.com/MyhreS/AI-Garbage-Collector
+brew install myhres/aigc/aigc
+brew services start myhres/aigc/aigc
+```
+
+The project repository also serves as a [custom Homebrew tap](https://docs.brew.sh/Taps). Homebrew downloads the matching release binary and verifies its checksum; no Rust installation is needed. `brew install` installs the executable. `brew services start` enables hourly cleanup using the defaults below. Use your normal user account, without `sudo`.
+
+If switching from the standalone installer, run `aigc service uninstall` before starting the Homebrew service. Both use the same service identity so there should be only one collector. Manage a Homebrew installation with `brew services`, rather than `aigc service install`.
+
+```sh
+brew update
+brew upgrade myhres/aigc/aigc
+brew services restart myhres/aigc/aigc
+```
+
+The formula uses Homebrew's stable `opt` path, so it does not point at an old version's executable. Each successful GitHub release updates the formula automatically.
+
+To uninstall, preserving settings and recovery bundles:
+
+```sh
+brew services stop myhres/aigc/aigc
+brew uninstall myhres/aigc/aigc
+brew untap myhres/aigc
+```
+
+### Terminal installer
+
+The standalone installer downloads the latest GitHub release and starts collection:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MyhreS/AI-Garbage-Collector/main/scripts/install.sh -o /tmp/aigc-install.sh
@@ -89,7 +121,7 @@ These generated directories are treated as disposable. Pin them if you keep manu
 
 ## Default policy
 
-Installation starts the service immediately. Each hourly run inventories resources and removes those that qualify:
+The standalone installer starts the service immediately; Homebrew starts it when you run `brew services start`. Each hourly run inventories resources and removes those that qualify:
 
 | Setting | Default |
 | --- | --- |
