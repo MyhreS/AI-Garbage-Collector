@@ -21,6 +21,10 @@ fn item() -> Item {
         status: Status::Unknown,
         reason: String::new(),
         idle_seconds: 0,
+        observed_uses: 0,
+        docker_keep_rank: None,
+        docker_created_at: String::new(),
+        docker_start_tokens: Default::default(),
     }
 }
 fn activity() -> Activity {
@@ -220,4 +224,83 @@ fn docker_uses_native_age_filter_without_manufactured_observations() {
     };
     tick(&mut i, &c, &mut State::default(), &activity(), 0);
     assert_eq!(i.status, Status::Protected);
+}
+
+fn image(n: usize, uses: usize) -> Item {
+    let mut i = item();
+    i.id = format!("docker-images:image-{n}");
+    i.kind = "docker-images".into();
+    i.path = None;
+    i.docker_created_at = format!("2026-01-0{n}T00:00:00Z");
+    i.docker_start_tokens = (0..uses)
+        .map(|v| (format!("container-{n}-{v}"), "2026-01-01T00:00:00Z".into()))
+        .collect();
+    i
+}
+#[test]
+fn three_most_used_images_survive_explicit_disposable_registration_and_pressure() {
+    let mut images: Vec<_> = (1..=5).map(|n| image(n, n)).collect();
+    let mut c = Config::default();
+    for i in &images {
+        c.managed.insert(i.id.clone(), "test".into());
+    }
+    let mut s = State::default();
+    for d in 0..=40 {
+        policy::evaluate(&mut images, &c, &mut s, &activity(), 0, d * 86400);
+    }
+    assert_eq!(
+        images
+            .iter()
+            .filter(|i| i.docker_keep_rank.is_some())
+            .count(),
+        3
+    );
+    for i in &images[2..] {
+        assert_eq!(i.status, Status::Protected);
+    }
+    for i in &images[..2] {
+        assert_eq!(i.status, Status::Eligible);
+    }
+    assert_eq!(
+        images[4].observed_uses, 5,
+        "repeated scans must not inflate frequency"
+    );
+}
+#[test]
+fn popularity_persists_when_containers_are_removed_and_counts_restarts() {
+    let mut images = vec![image(1, 1), image(2, 2), image(3, 3), image(4, 4)];
+    let mut s = State::default();
+    let c = Config::default();
+    policy::evaluate(&mut images, &c, &mut s, &activity(), 0, 0);
+    images[3]
+        .docker_start_tokens
+        .insert("container-4-0".into(), "2026-01-02T00:00:00Z".into());
+    policy::evaluate(&mut images, &c, &mut s, &activity(), 0, 86400);
+    assert_eq!(images[3].observed_uses, 5);
+    for i in &mut images {
+        i.docker_start_tokens.clear();
+    }
+    let saved = serde_json::to_string(&s).unwrap();
+    let mut restored: State = serde_json::from_str(&saved).unwrap();
+    policy::evaluate(&mut images, &c, &mut restored, &activity(), 0, 2 * 86400);
+    assert_eq!(images[3].observed_uses, 5);
+    assert_eq!(images[3].docker_keep_rank, Some(1));
+}
+#[test]
+fn fewer_than_three_images_are_all_kept() {
+    let mut images = vec![image(1, 0), image(2, 0)];
+    policy::evaluate(
+        &mut images,
+        &Config::default(),
+        &mut State::default(),
+        &activity(),
+        0,
+        0,
+    );
+    assert!(images.iter().all(|i| i.status == Status::Protected));
+    let c = Config {
+        docker_keep_most_used: 2,
+        ..Config::default()
+    };
+    assert!(c.validate().is_err());
 }

@@ -192,6 +192,15 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
                 i.idle_seconds as f64 / 86400.0,
                 i.reason
             );
+            if i.kind == "docker-images" {
+                println!(
+                    "  Observed container starts: {} · kept rank: {}",
+                    i.observed_uses,
+                    i.docker_keep_rank
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "outside protected set".into())
+                );
+            }
             if i.kind == "docker-cache" {
                 println!("  {}", i.label);
             }
@@ -211,6 +220,7 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
         "min-free-space" => c.min_free_bytes = config::bytes(value)?,
         "budget.docker-cache" => c.docker_cache_budget_bytes = config::bytes(value)?,
         "budget.backups" => c.backup_budget_bytes = config::bytes(value)?,
+        "docker.keep-most-used" => c.docker_keep_most_used = value.parse()?,
         "max-delete-per-run" => c.max_delete_bytes_per_run = config::bytes(value)?,
         "docker-cache-cleanup" => c.docker_cache_cleanup = value.parse()?,
         "roots" => {
@@ -218,7 +228,7 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
                 .context("roots must be a JSON array of absolute paths")?
         }
         _ => bail!(
-            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.docker-cache, budget.backups, max-delete-per-run, docker-cache-cleanup, or roots"
+            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.docker-cache, budget.backups, docker.keep-most-used, max-delete-per-run, docker-cache-cleanup, or roots"
         ),
     }
     c.validate()

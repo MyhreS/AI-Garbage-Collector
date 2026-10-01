@@ -73,7 +73,7 @@ Counts are resource counts, not agent/session counts. Docker cache is one builde
 | Regular Git linked worktrees | Yes | Only explicitly registered disposable trees; must be clean, including ignored files; verifies a recovery bundle first |
 | App-managed worktrees under `.codex` / `.codex-workspaces` | Yes | **Protected.** Use the owning application's archive tool; aigc does not edit its session database |
 | Docker build cache | Yes, default builder | Native `docker builder prune`, with age filter and cache storage setting |
-| Docker images | Yes | Only images explicitly registered disposable; native removal without force |
+| Docker images | Yes | Only images explicitly registered disposable; keeps at least the top three by observed usage; native removal without force |
 | iOS simulator devices | Yes | Only registered disposable, shut-down devices; deletes app data through `simctl` |
 | Android AVDs | Yes | Only registered disposable AVDs; requires `avdmanager`; defers while any emulator is running |
 | iOS simulator runtimes | Yes, when exposed by `simctl` | **Report only** |
@@ -97,6 +97,7 @@ Installation starts the service immediately. Each hourly run inventories resourc
 | Inactivity when available space is below the target | 7 days |
 | Free-space target | 20 GiB |
 | Docker cache storage setting | 5 GiB |
+| Most-used Docker images kept | At least 3, even when marked disposable or disk space is low |
 | Recovery bundle budget | 2 GiB; further worktree removal stops when it would be exceeded |
 | Estimated removal limit per pass | 50 GiB, excluding native Docker cache pruning |
 | Schedule | Every hour while your user session is logged in; also when loaded |
@@ -126,6 +127,7 @@ aigc config path
 aigc config set min-free-space 25GB
 aigc config set budget.docker-cache 5GB
 aigc config set budget.backups 2GB
+aigc config set docker.keep-most-used 5
 aigc config set retention-days 14
 aigc config set pressure-retention-days 3
 aigc config set max-delete-per-run 20GB
@@ -149,6 +151,14 @@ aigc service status
 ```
 
 Pins protect a directory, its descendants, and containing resources that would otherwise remove it. A successful `clean` with no eligible items does nothing; use `plan` for the reasons.
+
+### Docker images have an extra keep rule
+
+The **three most-used images are always protected**, including images marked disposable. You can increase the number with `docker.keep-most-used`; values below three are rejected. Any image referenced by a running or stopped container is also protected. Images outside this set still need explicit disposable registration, observed inactivity, and all other safety checks.
+
+Usage means container starts that aigc has observed: it records each container's `StartedAt` value, counts a new container or a changed start time once, and remembers the image's count after containers are removed. Repeated scans do not inflate counts. Ties prefer newer image creation dates, then stable image IDs. With fewer than three images, all are kept. `aigc status docker` and JSON expose the observed count and protected rank.
+
+It cannot reconstruct usage from containers deleted before installation or starts missed between scans. On a first scan it uses surviving containers; images with no usage evidence are ordered by creation date. Pin an important image if its previous use is invisible. The collector never runs broad `docker system prune`, `image prune`, or forced image removal. Build-cache pruning does not remove image objects.
 
 ### Opt in disposable worktrees, images and virtual devices
 
@@ -218,7 +228,7 @@ cargo test --locked
 cargo build --release --locked
 ```
 
-Tests cover observed retention, disk pressure, missing activity evidence, pins, unowned devices, malformed configuration, symlink handling, changes between scan and removal, tracked files, and recovery of an unpushed commit after worktree removal. Native device and Docker deletion still need broader testing across tool versions; this project does not claim production-proven cleanup for every setup.
+Tests cover the top-three Docker keep rule, usage counters and restarts, observed retention, disk pressure, missing activity evidence, pins, unowned devices, malformed configuration, symlink handling, changes between scan and removal, tracked files, and recovery of an unpushed commit after worktree removal. Native device and Docker deletion still need broader testing across tool versions; this project does not claim production-proven cleanup for every setup.
 
 The CI workflow validates changes on macOS. Pushing a version tag builds Apple Silicon and Intel archives and publishes them with checksums. See [release instructions](docs/RELEASING.md).
 

@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     fs,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
@@ -30,6 +30,14 @@ pub struct Item {
     pub status: Status,
     pub reason: String,
     pub idle_seconds: u64,
+    #[serde(default)]
+    pub observed_uses: u64,
+    #[serde(default)]
+    pub docker_keep_rank: Option<usize>,
+    #[serde(default)]
+    pub docker_created_at: String,
+    #[serde(skip_serializing, default)]
+    pub docker_start_tokens: BTreeMap<String, String>,
 }
 impl Item {
     pub fn new(
@@ -58,6 +66,10 @@ impl Item {
             status: Status::Unknown,
             reason: String::new(),
             idle_seconds: 0,
+            observed_uses: 0,
+            docker_keep_rank: None,
+            docker_created_at: String::new(),
+            docker_start_tokens: BTreeMap::new(),
         }
     }
 }
@@ -545,11 +557,21 @@ fn scan_docker(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
         let ids = command("docker", &["image", "ls", "-aq", "--no-trunc"])?;
         let container_ids = command("docker", &["container", "ls", "-aq"])?;
         let mut used = HashSet::new();
+        let mut starts: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
         for id in container_ids.lines() {
             let data = command("docker", &["container", "inspect", id])?;
             let v: Value = serde_json::from_str(&data)?;
-            if let Some(id) = v[0]["Image"].as_str() {
-                used.insert(id.to_string());
+            if let Some(image_id) = v[0]["Image"].as_str() {
+                used.insert(image_id.to_string());
+                if let Some(start) = v[0]["State"]["StartedAt"]
+                    .as_str()
+                    .filter(|s| !s.starts_with("0001-"))
+                {
+                    starts
+                        .entry(image_id.to_string())
+                        .or_default()
+                        .insert(id.to_string(), start.to_string());
+                }
             }
         }
         for id in ids.lines().collect::<BTreeSet<_>>() {
@@ -566,6 +588,8 @@ fn scan_docker(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
             );
             i.bytes = v["Size"].as_u64().unwrap_or(0);
             i.active = used.contains(id);
+            i.docker_start_tokens = starts.remove(id).unwrap_or_default();
+            i.docker_created_at = v["Created"].as_str().unwrap_or_default().to_string();
             items.push(i);
         }
         let df = command("docker", &["system", "df", "--format", "{{json .}}"])?;

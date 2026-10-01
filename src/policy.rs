@@ -4,7 +4,7 @@ use crate::{
     runtime::now,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -16,7 +16,55 @@ pub struct Observation {
 pub struct State {
     pub observations: BTreeMap<String, Observation>,
     pub last_collection: Option<u64>,
+    #[serde(default)]
+    pub image_usage: BTreeMap<String, ImageUsage>,
+    #[serde(default)]
+    pub protected_images: BTreeSet<String>,
 }
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ImageUsage {
+    pub observed_starts: u64,
+    pub container_starts: BTreeMap<String, String>,
+    pub last_seen: u64,
+}
+
+fn protect_popular_images(items: &mut [Item], c: &Config, s: &mut State, time: u64) {
+    let mut ranking = Vec::new();
+    for i in items.iter_mut().filter(|i| i.kind == "docker-images") {
+        let u = s.image_usage.entry(i.id.clone()).or_default();
+        if i.complete {
+            for (container, start) in &i.docker_start_tokens {
+                if u.container_starts.get(container) != Some(start) {
+                    u.observed_starts = u.observed_starts.saturating_add(1);
+                }
+            }
+            u.container_starts = i.docker_start_tokens.clone();
+            u.last_seen = time;
+        }
+        i.observed_uses = u.observed_starts;
+        i.docker_keep_rank = None;
+        ranking.push((i.id.clone(), u.observed_starts, i.docker_created_at.clone()));
+    }
+    ranking.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)).then(a.0.cmp(&b.0)));
+    // A hard minimum: a policy edit cannot expose the three most-used images.
+    s.protected_images = ranking
+        .iter()
+        .take(c.docker_keep_most_used.max(3))
+        .map(|r| r.0.clone())
+        .collect();
+    for (rank, (id, _, _)) in ranking
+        .iter()
+        .take(c.docker_keep_most_used.max(3))
+        .enumerate()
+    {
+        if let Some(i) = items.iter_mut().find(|i| &i.id == id) {
+            i.docker_keep_rank = Some(rank + 1);
+        }
+    }
+    s.image_usage
+        .retain(|_, u| time.saturating_sub(u.last_seen) < 90 * 86400);
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -28,6 +76,7 @@ pub enum Status {
 }
 
 pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, free: u64, time: u64) {
+    protect_popular_images(items, c, s, time);
     let days = if free < c.min_free_bytes {
         c.pressure_retention_days
     } else {
@@ -63,6 +112,14 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             (
                 Status::InUse,
                 "running resource or open file / working directory".into(),
+            )
+        } else if let Some(rank) = i.docker_keep_rank {
+            (
+                Status::Protected,
+                format!(
+                    "kept Docker image #{rank}: {} observed container starts; top {} are always protected",
+                    i.observed_uses, c.docker_keep_most_used
+                ),
             )
         } else if !i.complete {
             (
