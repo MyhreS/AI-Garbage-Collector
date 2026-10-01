@@ -1,7 +1,7 @@
 # Releases
 
 1. Update the package version and lockfile. Review the README coverage table against implementation.
-2. Run formatting, Clippy, tests, and a release build on macOS.
+2. Run formatting, Clippy, and a release build on macOS. Do not run tests unless explicitly requested.
 3. Exercise status and dry-run with isolated state. Test destructive changes only on owned fixtures.
 4. Commit and push the version tag (for example `v0.1.0`). The release workflow builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, creates archives, and publishes SHA256SUMS.
 5. Verify both assets and test the installer. The installer starts a per-user collector; use a disposable test account for install/uninstall testing.

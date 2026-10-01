@@ -316,13 +316,8 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
         }
         "docker-images" => {
             ensure!(
-                item.docker_keep_rank.is_none(),
-                "one of the most-used Docker images; removal refused"
-            );
-            let state = policy::load_state(dir)?;
-            ensure!(
-                !state.protected_images.contains(&item.id),
-                "one of the most-used Docker images; removal refused"
+                !item.active,
+                "image is referenced by a container; removal refused"
             );
             ensure!(
                 c.managed.contains_key(&item.id),

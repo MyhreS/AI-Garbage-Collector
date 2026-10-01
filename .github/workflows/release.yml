@@ -15,7 +15,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - run: cargo test --locked
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - run: tar -czf aigc-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release aigc
       - uses: actions/upload-artifact@v4

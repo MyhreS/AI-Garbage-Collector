@@ -10,7 +10,7 @@ fn cli(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
 #[test]
 fn cached_json_status_is_explicit_and_fast() {
     let d = tempfile::tempdir().unwrap();
-    let report = json!({"schema_version":1,"generated_at":aigc::runtime::now(),"disk_total_bytes":100,"disk_free_bytes":50,"min_free_bytes":20,"last_collection":null,"service_installed":false,"warnings":[],"items":[]});
+    let report = json!({"schema_version":1,"policy_version":aigc::policy::POLICY_VERSION,"generated_at":aigc::runtime::now(),"disk_total_bytes":100,"disk_free_bytes":50,"min_free_bytes":20,"last_collection":null,"service_installed":false,"warnings":[],"items":[]});
     fs::write(d.path().join("last-report.json"), report.to_string()).unwrap();
     let out = cli(d.path(), &["status", "--json"]);
     assert!(

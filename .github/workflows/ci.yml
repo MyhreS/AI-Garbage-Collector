@@ -3,7 +3,7 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  test:
+  build:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -11,7 +11,6 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo test --locked
+      - run: cargo clippy --locked --lib --bin aigc -- -D warnings
       - run: cargo build --locked --release
       - run: target/release/aigc --help

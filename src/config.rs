@@ -17,7 +17,6 @@ pub struct Config {
     pub docker_cache_budget_bytes: u64,
     pub backup_budget_bytes: u64,
     pub docker_cache_cleanup: bool,
-    pub docker_keep_most_used: usize,
     pub max_delete_bytes_per_run: u64,
     pub paused_until: u64,
     pub pins: Vec<String>,
@@ -43,7 +42,6 @@ impl Default for Config {
             docker_cache_budget_bytes: 5 * GIB,
             backup_budget_bytes: 2 * GIB,
             docker_cache_cleanup: true,
-            docker_keep_most_used: 3,
             max_delete_bytes_per_run: 50 * GIB,
             paused_until: 0,
             pins: vec![],
@@ -62,11 +60,6 @@ impl Config {
                 "retention must be 1..3650 days; pressure retention cannot exceed normal retention"
             );
         }
-        if !(3..=1000).contains(&self.docker_keep_most_used) {
-            bail!(
-                "docker.keep-most-used must be between 3 and 1000; the top three are always protected"
-            );
-        }
         if self.max_delete_bytes_per_run == 0 {
             bail!("max_delete_bytes_per_run must be positive");
         }
@@ -80,8 +73,13 @@ impl Config {
     pub fn load(dir: &Path) -> Result<Self> {
         let p = dir.join("config.json");
         let c: Self = if p.exists() {
-            serde_json::from_slice(&fs::read(p)?)
-                .context("invalid config.json; collection refused")?
+            let mut value: serde_json::Value = serde_json::from_slice(&fs::read(p)?)
+                .context("invalid config.json; collection refused")?;
+            // Ignore the retired ranking setting when reading older installations.
+            if let Some(object) = value.as_object_mut() {
+                object.remove("docker_keep_most_used");
+            }
+            serde_json::from_value(value).context("invalid config.json; collection refused")?
         } else {
             Self::default()
         };
