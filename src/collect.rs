@@ -22,6 +22,8 @@ pub struct Event {
     pub detail: String,
     pub estimated_removed_bytes: u64,
     pub disk_free_delta_bytes: i64,
+    #[serde(default)]
+    pub native_reclaimed_bytes: Option<u64>,
 }
 pub fn history(dir: &Path) -> Result<Vec<Event>> {
     let p = dir.join("history.json");
@@ -61,22 +63,62 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
     );
     let mut results = vec![];
     let mut removed = 0u64;
-    for item in report.items.iter().filter(|i| i.status == Status::Eligible) {
+    for item in report
+        .items
+        .iter()
+        .filter(|i| i.status == Status::Eligible)
+        .take(10)
+    {
         // Revalidate activity immediately before each action, while holding the shared lock.
         let activity = inventory::activity(dir);
-        if !activity.reliable || activity.busy || activity.touches(item.path.as_deref()) {
-            continue;
-        }
-        if item.bytes > c.max_delete_bytes_per_run.saturating_sub(removed) {
-            continue;
-        }
+        let reserved = activity.reserved.iter().any(|id| {
+            id == &item.id
+                || item.path.as_ref().is_some_and(|p| {
+                    id.starts_with('/') && (p.starts_with(id) || Path::new(id).starts_with(p))
+                })
+        });
+        let precheck = if !activity.reliable
+            || activity.busy
+            || reserved
+            || activity.touches(item.path.as_deref())
+        {
+            Some("activity or reservation changed; deferred")
+        } else if item.bytes > c.max_delete_bytes_per_run.saturating_sub(removed) {
+            Some("per-pass removal budget reached")
+        } else {
+            None
+        };
         let before = crate::runtime::disk(&home())?.1;
-        let result = remove(item, c, dir);
+        let result = if let Some(reason) = precheck {
+            Err(anyhow::anyhow!(reason))
+        } else {
+            revalidate(item, c, dir).and_then(|()| remove(item, c, dir))
+        };
         let after = crate::runtime::disk(&home())?.1;
+        let native_reclaimed = result.as_ref().ok().and_then(|s| native_bytes(s));
+        let maintenance = matches!(
+            item.evidence.action,
+            Some(crate::evidence::Action::Cache { .. } | crate::evidence::Action::Buildkit { .. })
+        );
         let (outcome, detail, estimate) = match result {
             Ok(detail) => {
                 removed = removed.saturating_add(item.bytes);
-                ("removed", detail, item.bytes)
+                let outcome = if maintenance && native_reclaimed == Some(0) {
+                    "no_op"
+                } else if maintenance {
+                    "maintained"
+                } else {
+                    "removed"
+                };
+                (
+                    outcome,
+                    detail,
+                    if maintenance {
+                        native_reclaimed.unwrap_or(0)
+                    } else {
+                        item.bytes
+                    },
+                )
             }
             Err(e) => ("skipped", e.to_string(), 0),
         };
@@ -86,6 +128,7 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
             outcome: outcome.into(),
             detail,
             estimated_removed_bytes: estimate,
+            native_reclaimed_bytes: native_reclaimed,
             disk_free_delta_bytes: (after as i128 - before as i128)
                 .clamp(i64::MIN as i128, i64::MAX as i128)
                 as i64,
@@ -99,6 +142,7 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
                 detail: event.detail.clone(),
                 estimated_removed_bytes: event.estimated_removed_bytes,
                 disk_free_delta_bytes: event.disk_free_delta_bytes,
+                native_reclaimed_bytes: event.native_reclaimed_bytes,
             },
         )?;
         results.push(event);
@@ -106,10 +150,14 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
     let mut state = policy::load_state(dir)?;
     state.last_collection = Some(now());
     for e in &results {
-        if e.outcome == "removed" {
+        if matches!(e.outcome.as_str(), "removed" | "maintained" | "no_op") {
+            state.maintenance.insert(e.resource.clone(), e.time);
             state.observations.remove(&e.resource);
         }
     }
+    state
+        .maintenance
+        .retain(|_, t| now().saturating_sub(*t) <= 365 * 86400);
     atomic_json(&dir.join("state.json"), &state)?;
     let _ = fs::remove_file(dir.join("last-report.json"));
     Ok(results)
@@ -127,12 +175,32 @@ fn verify_path(item: &Item) -> Result<PathBuf> {
     );
     let (size, modified, entries, complete) = inventory::tree_stats(&p);
     ensure!(
-        complete && size == item.bytes && modified == item.modified && entries == item.entries,
+        item.evidence.identity.as_ref().is_none_or(|id| {
+            use std::os::unix::fs::MetadataExt;
+            fs::symlink_metadata(&p).is_ok_and(|m| *id == format!("{}:{}", m.dev(), m.ino()))
+        }) && complete
+            && size == item.bytes
+            && modified == item.modified
+            && entries == item.entries,
         "resource changed after the scan; collection deferred"
     );
     Ok(p)
 }
 fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
+    if item.evidence.action.is_some() {
+        if matches!(
+            item.evidence.action,
+            Some(
+                crate::evidence::Action::Directory
+                    | crate::evidence::Action::Poetry { .. }
+                    | crate::evidence::Action::Cache { .. }
+                    | crate::evidence::Action::Sdk { .. }
+            )
+        ) {
+            verify_path(item)?;
+        }
+        return crate::adapters::remove(item, c);
+    }
     match item.kind.as_str() {
         "dependencies" | "builds" | "xcode-builds" => {
             let p = verify_path(item)?;
@@ -302,9 +370,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 Path::new(registered) == p,
                 "AVD metadata points to another path"
             );
-            let sdk = std::env::var_os("ANDROID_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home().join("Library/Android/sdk"));
+            let sdk = crate::adapters::mobile::sdk_root();
             let tool = sdk.join("cmdline-tools/latest/bin/avdmanager");
             ensure!(
                 tool.is_file(),
@@ -366,4 +432,64 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
         }
         _ => bail!("report-only resource"),
     }
+}
+
+// Reports are plans, never authority to mutate stale resources. Rescan consumers and activity.
+fn revalidate(item: &Item, c: &Config, dir: &Path) -> Result<()> {
+    let (mut report, activity) = inventory::report(c, dir)?;
+    let mut state = policy::load_state(dir)?;
+    policy::evaluate(
+        &mut report.items,
+        c,
+        &mut state,
+        &activity,
+        report.disk_free_bytes,
+        report.generated_at,
+    );
+    let current = report
+        .items
+        .iter()
+        .find(|i| i.id == item.id)
+        .context("resource disappeared")?;
+    ensure!(
+        current.status == Status::Eligible,
+        "eligibility changed: {}",
+        current.reason
+    );
+    ensure!(
+        current.evidence.action == item.evidence.action
+            && current.evidence.identity == item.evidence.identity
+            && current.bytes == item.bytes
+            && current.modified == item.modified
+            && current.entries == item.entries,
+        "resource identity or content changed"
+    );
+    Ok(())
+}
+fn native_bytes(output: &str) -> Option<u64> {
+    for line in output.lines() {
+        let text = line.trim();
+        if let Some(n) = text
+            .strip_prefix("Total reclaimed space:")
+            .or_else(|| text.strip_prefix("Total:"))
+        {
+            let value = n.trim().replace(' ', "").to_uppercase();
+            let split = value
+                .find(|c: char| !c.is_ascii_digit() && c != '.')
+                .unwrap_or(value.len());
+            let number: f64 = value[..split].parse().ok()?;
+            let scale = match &value[split..] {
+                "B" | "" => 1.0,
+                "KB" => 1000.0,
+                "MB" => 1e6,
+                "GB" => 1e9,
+                "KIB" => 1024.0,
+                "MIB" => 1048576.0,
+                "GIB" => 1073741824.0,
+                _ => return None,
+            };
+            return Some((number * scale) as u64);
+        }
+    }
+    None
 }

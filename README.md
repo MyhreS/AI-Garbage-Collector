@@ -8,7 +8,7 @@ AI Garbage Collector exists to clean up after AI coding agents. Running many age
 
 No cloud environment, subscription, account, or AI model. A release installs as one native executable; users do not need Rust, Python, or Node.
 
-**Version 0.1 is an early, conservative implementation.** It does not yet safely automate every category it can report. Read the coverage table before enabling it.
+**Version 0.2 adds detailed ownership and native-tool adapters.** It does not yet safely automate every category it can report. Read the coverage table before enabling it.
 
 ## Install
 
@@ -54,7 +54,7 @@ rm /tmp/aigc-install.sh
 
 The installer verifies the release archive's SHA-256 checksum, installs `~/.local/bin/aigc`, and starts an hourly per-user LaunchAgent. It prints the full executable path if `~/.local/bin` is not on your `PATH`. It does not request administrator access or edit your shell startup files.
 
-Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.1.0` to select a particular release.
+Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.2.0` to select a particular release.
 
 ### Build and install from source
 
@@ -83,7 +83,7 @@ aigc status --json
 aigc status --refresh
 ```
 
-Status reuses a clearly labelled snapshot for up to one hour so repeated queries are fast. Use `--refresh` for a fresh inventory. Cleanup always performs a fresh scan; configuration changes invalidate the snapshot. The first scan can take a few minutes on machines with many worktrees.
+Status reuses a clearly labelled snapshot for up to one hour so repeated queries are fast. Use `--refresh` for a fresh inventory. Cleanup always performs a fresh scan; configuration changes invalidate the snapshot. The first scan can take a few minutes on machines with many worktrees. Deep adapters inspect at most 250 discovered projects. Missing coverage disables reference-dependent cleanup; native tools must already be installed.
 
 The overview shows disk capacity, available space, service installation, the last collection time, and a table with **Total / In use / Protected / Observing / Eligible / Unknown** counts and category sizes. A category argument shows resource IDs and individual reasons. JSON also includes paths, allocated bytes, observation duration, scan completeness, warnings, and schema version.
 
@@ -93,26 +93,31 @@ The overview shows disk capacity, available space, service installation, the las
 - **Eligible:** it passed the current policy; the collector checks again before removal.
 - **Unknown:** a size or activity check was incomplete. Unknown is never treated as unused.
 
-Counts are resource counts, not agent/session counts. Docker cache is one builder-level entry; SDK and package-cache entries represent storage directories. Unavailable tools produce warnings, not fake zero counts.
+Counts are resource counts, not agent/session counts. Detailed Docker cache entries represent native records; SDK entries represent installed packages when discovery succeeds. Unavailable tools produce warnings, not fake zero counts.
 
-**Sizes are estimates, not a guaranteed reclaimable total.** Worktrees include their dependencies; Docker images share layers; APFS clones and snapshots can retain blocks. Category sizes must not be added together. Docker's cache size/reclaimability text is preserved separately. History records both estimated bytes removed and the actual before/after change in free disk space; concurrent applications can affect that change.
+**Sizes are estimates, not a guaranteed reclaimable total.** Worktrees include their dependencies; Docker images share layers; APFS clones and snapshots can retain blocks. Category sizes must not be added together. The filesystem union counts nested directories and hardlinks once, with a completeness flag; APFS sharing remains an estimate. Docker's human-formatted cache sizes are retained alongside conservative byte estimates. History records both estimated bytes removed and the actual before/after change in free disk space; concurrent applications can affect that change.
 
 ## What it does and does not clean
 
-| Resource | Reports | Automatic cleanup in v0.1 |
+| Resource | Reports | Automatic cleanup in v0.2 |
 | --- | --- | --- |
 | Xcode DerivedData children | Yes | After observed inactivity and activity checks |
-| `node_modules`, project `.venv` | Yes | Recognized project folders only; refuses Git-tracked files |
+| `node_modules` | Yes | Recognized project folders only; refuses Git-tracked files |
+| Python / Poetry project environments | Project associations, interpreter metadata, matching-input candidates | Explicitly disposable, unshared environments only; linked environments and installed tools protected |
 | Rust `target`, Swift `.build`, Next.js `.next` | Yes | Recognized project folders only; refuses Git-tracked files |
 | Regular Git linked worktrees | Yes | Only explicitly registered disposable trees; must be clean, including ignored files; verifies a recovery bundle first |
 | App-managed worktrees under `.codex` / `.codex-workspaces` | Yes | **Protected.** Use the owning application's archive tool; aigc does not edit its session database |
-| Docker build cache | Yes, default builder | Native `docker builder prune`, with age filter and cache storage setting |
+| Docker build cache | Per-record metadata from running local single-node Buildx builders | Exact-ID native Buildx pruning; private immutable regular records only, native age filter and storage setting |
 | Docker images | Yes | Only images explicitly registered disposable; native removal without force |
 | iOS simulator devices | Yes | Only registered disposable, shut-down devices; deletes app data through `simctl` |
 | Android AVDs | Yes | Only registered disposable AVDs; requires `avdmanager`; defers while any emulator is running |
-| iOS simulator runtimes | Yes, when exposed by `simctl` | **Report only** |
-| Android SDK platforms, NDKs, system images | Yes, standard Mac SDK location | **Report only** |
-| Homebrew, pip, uv and npm global caches | Selected standard paths | **Report only** |
+| iOS simulator runtimes | Native disk registration, build and retained devices | Explicitly disposable runtimes only, no retained devices; supported native schema required |
+| Android SDK packages | Installed package IDs, AVD references and simple Gradle declarations | Explicitly disposable packages only; unresolved Gradle requirements protect packages |
+| pip, pnpm, npm caches | Manager-configured paths | Opt-in native purge/prune/verify after observed inactivity, size budget and cooldown |
+| uv, Poetry, Cargo, Gradle, Yarn, Bun storage | Configured or documented locations; scope varies by adapter | **Report only**; native ownership/retention can span resources |
+| Playwright browsers, npx installations | Revisions/installations and available package references | **Report only**; keep native ownership controls |
+| Homebrew cache | Configured cache path and native cleanup preview | **Report only**; native cleanup also affects installed versions |
+| Registered scratch/custom build output | Explicit owner, purpose and retention deadline | Opt-in disposable directories after path, source and activity checks |
 | Xcode release archives | Yes | **Always protected** |
 | Recovery bundles created by aigc | Yes | **Always protected; user-managed retention** |
 | Docker volumes, containers, databases, credentials, signing keys, personal files | Not a general-purpose inventory | **Never targeted** |
@@ -121,9 +126,24 @@ This version does **not** deduplicate dependencies, share environments between w
 
 These generated directories are treated as disposable. Pin them if you keep manual changes or irreplaceable files inside them. Removing dependencies or build output means a later install/build may take longer and require internet access. Registered disposable simulator and emulator data is permanently deleted. There is no universal undo for caches or devices.
 
-## Planned improvements
+## Detailed inspection and ownership
 
-See the [cleanup research and proposed roadmap](docs/CLEANUP-RESEARCH.md) for a detailed investigation of Docker usage records, Poetry/uv environments, package stores, build caches and simulator runtimes. It describes the evidence we could collect, deletion safeguards and implementation priorities. These proposals are **not implemented features**; the coverage table above describes the current app.
+```sh
+aigc status python --owners
+aigc status docker --builders
+aigc inspect 'EXACT-RESOURCE-ID'
+aigc duplicates --json
+aigc preview 'EXACT-RESOURCE-ID'
+aigc own 'EXACT-RESOURCE-ID' --owner task-123
+aigc require 'EXACT-RESOURCE-ID' --project my-project
+aigc unrequire 'EXACT-RESOURCE-ID' --project my-project
+```
+
+`own` records ownership without authorizing deletion. `require` protects a resource needed by a project, including future builds. `manage` authorizes disposal after all other checks. Inspection includes process IDs/start times, known consumers, native metadata, observation coverage, reconstruction notes and protection reasons. It does not identify every agent session automatically.
+
+`duplicates` groups matching recorded dependency/build inputs. It never merges environments or assumes matching lockfiles make two mutable installations interchangeable. Native previews can include resources that aigc would protect; a preview does not grant deletion permission.
+
+See [adapter behavior and limitations](docs/ADAPTERS.md) for exact scope, and the [original research](docs/CLEANUP-RESEARCH.md) for rationale and longer-term ideas.
 
 ## Default policy
 
@@ -136,12 +156,14 @@ The standalone installer starts the service immediately; Homebrew starts it when
 | Free-space target | 20 GiB |
 | Docker cache storage setting | 5 GiB |
 | Recovery bundle budget | 2 GiB; further worktree removal stops when it would be exceeded |
-| Estimated removal limit per pass | 50 GiB, excluding native Docker cache pruning |
+| Estimated removal limit per pass | 50 GiB; at most 10 eligible actions, with complete revalidation per action |
+| Opt-in package-cache budget | 5 GiB per reported cache |
+| Maintenance/recollection cooldown | 7 days |
 | Schedule | Every hour while your user session is logged in; also when loaded |
 
 **A first install starts filesystem observation, not a disk wipe.** Docker build cache is the exception: Docker provides native age/usage filtering, so eligible old cache can be pruned on the first pass. For filesystem resources, age alone does not authorize deletion. A change in size, latest modification time, entry count, or detected use resets the observation clock. A monitoring gap longer than 48 hours also resets it. Leaving the Mac off for a month does not make everything eligible on startup.
 
-The free-space target is a policy trigger, not a guarantee or hard quota. The collector does not remove protected resources to meet it. Native Docker pruning uses Docker's eligibility rules; `--keep-storage` is a cache retention setting, not a guaranteed final disk size. Docker cache pruning is not covered by the filesystem byte limit.
+The free-space target is a policy trigger, not a guarantee or hard quota. The collector does not remove protected resources to meet it. Native Buildx pruning applies an exact record selector, its age filter and `--max-used-space`. Size estimates are conservative when Docker returns rounded text. Native commands may reclaim less than their reported scope; the free-space target remains a trigger, not a guarantee.
 
 Discovery includes these existing locations:
 
@@ -168,6 +190,9 @@ aigc config set retention-days 14
 aigc config set pressure-retention-days 3
 aigc config set max-delete-per-run 20GB
 aigc config set docker-cache-cleanup false
+aigc config set budget.package-cache 5GB
+aigc config set maintenance-cooldown-days 7
+aigc config set deep-inventory true
 aigc config set roots '["/Users/me/Projects", "/Users/me/other-repository"]'
 ```
 
@@ -194,7 +219,7 @@ An image referenced by **any running or stopped container** is protected, includ
 
 Other images are protected by default too. Removal requires explicit disposable registration, the inactivity period, no pin, and complete activity checks. The collector uses `docker image rm` without force; it never runs broad `docker system prune` or `docker image prune`. Build-cache pruning does not remove image objects.
 
-There is no popularity ranking or fixed number of images to keep. For example, an image used by a Curly container stays protected while that container exists, even when stopped. Images needed only for a future build or referenced in a Compose file may have no container reference: leave them unregistered or pin their exact resource ID. The collector does not infer every project's future image requirements.
+There is no popularity ranking or fixed number of images to keep. For example, an image used by a Curly container stays protected while that container exists, even when stopped. Images needed only for a future build or referenced in a Compose file may have no container reference: leave them unregistered or pin their exact resource ID. The collector protects discovered Compose and simple Dockerfile references. Dynamic or failed reference discovery blocks image cleanup. Files outside configured discovery and future requirements still need explicit pins or `require`.
 
 Older configuration files containing the retired `docker_keep_most_used` setting remain readable; that setting is ignored and disappears when configuration is next saved. Old ranking state is ignored, and snapshots from the previous policy are refreshed.
 
@@ -214,7 +239,7 @@ Registration authorizes disposal after policy checks. It does not bypass pins, a
 
 ## Use it from an agent
 
-Use `--json` for reports and exact IDs. Exit code 0 means the command completed, not that anything was deleted; inspect the outcomes and warnings. Invalid commands/configuration, lock contention, and command failures exit nonzero. Errors are currently text on stderr.
+Use `--json` for reports (schema version 2) and exact IDs. Exit code 0 means the command completed, not that anything was deleted; inspect the outcomes and warnings. Invalid commands/configuration, lock contention, and command failures exit nonzero. Errors are currently text on stderr.
 
 ```sh
 aigc status --json
@@ -223,7 +248,16 @@ aigc run -- npm run build
 aigc run -- xcodebuild -scheme MyApp build
 ```
 
-`aigc run` reserves all resources while its foreground child runs. Reservation records include the process ID and start time to avoid trusting a reused PID. It forwards the child's exit code. Use it for builds and agent sessions when possible. Detached subprocesses are not a supported reservation lifecycle.
+`aigc run` reserves all resources by default. Pass repeatable `--resource` IDs or absolute paths and `--owner` for scoped reservations. It creates a separate process group and retains the reservation until the foreground command and inherited background group members finish. Explicitly daemonized processes that escape that group are not tracked: pin their resources. A crashed wrapper leaves a protective reservation; inspect `aigc leases`, then explicitly `aigc release-lease ID` only after its work has ended. A failed child makes the wrapper fail.
+
+```sh
+aigc run --resource /absolute/path/to/project --owner task-123 -- cargo build
+aigc register /absolute/path/to/project/package-staging --kind scratch \
+  --owner task-123 --purpose 'Disposable packaging output' --retain-days 30
+aigc unregister /absolute/path/to/project/package-staging
+```
+
+Registration is explicit permission to dispose of generated contents after its minimum deadline and the normal observation period. It cannot authorize tracked source, nested Git repositories, protected application state or personal folders.
 
 Collection uses `lsof`, process inspection, device state, filesystem observations and native Git/Docker checks. It defers while recognized builds or agents run. **These are best-effort signals, not proof that an arbitrary paused agent is finished.** External tools do not take aigc's lock, so a process can start between inspection and deletion. Use reservations and pins for important work. aigc's own commands serialize state updates and collection with a lock.
 

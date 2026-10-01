@@ -8,9 +8,7 @@ use aigc::{
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use serde::Serialize;
-use std::{
-    collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command,
-};
+use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 #[derive(Parser)]
 #[command(
@@ -22,7 +20,7 @@ struct Cli {
     #[arg(
         long,
         global = true,
-        help = "Emit structured JSON (schema version 1 for reports)"
+        help = "Emit structured JSON (schema version 2 for reports)"
     )]
     json: bool,
     #[command(subcommand)]
@@ -38,7 +36,53 @@ enum Commands {
         category: Option<String>,
         #[arg(long, help = "Ignore the cached snapshot and inspect resources again")]
         refresh: bool,
+        #[arg(long, help = "Show owner and process evidence")]
+        owners: bool,
+        #[arg(long, help = "Show per-builder cache evidence")]
+        builders: bool,
     },
+    /// Inspect one exact resource with ownership, native metadata and all recorded blockers.
+    Inspect { id: String },
+    /// Report matching dependency/build inputs. Does not merge or delete environments.
+    Duplicates,
+    /// Show a native non-destructive preview where supported, otherwise show the planned action.
+    Preview { id: String },
+    /// Record ownership without granting disposal permission.
+    Own {
+        id: String,
+        #[arg(long)]
+        owner: String,
+    },
+    /// Protect a resource required by a project, including future builds.
+    Require {
+        id: String,
+        #[arg(long)]
+        project: String,
+    },
+    /// Remove a project's explicit resource requirement.
+    Unrequire {
+        id: String,
+        #[arg(long)]
+        project: String,
+    },
+    /// Register a disposable generated directory with an owner, purpose and minimum retention.
+    Register {
+        path: PathBuf,
+        #[arg(long, value_parser = ["scratch", "builds", "python"])]
+        kind: String,
+        #[arg(long)]
+        owner: String,
+        #[arg(long)]
+        purpose: String,
+        #[arg(long, default_value_t = 30)]
+        retain_days: u64,
+    },
+    /// Stop managing a registered generated directory.
+    Unregister { path: PathBuf },
+    /// List cooperative reservations, including ones retained after a crashed wrapper.
+    Leases,
+    /// Release a retained reservation after verifying its processes and detached work have ended.
+    ReleaseLease { id: String },
     /// Explain the current cleanup plan without deleting resources.
     Plan,
     /// Remove eligible resources after rechecking activity and safety conditions.
@@ -73,6 +117,13 @@ enum Commands {
     History,
     /// Protect all resources while running a command. Use: aigc run -- npm run build
     Run {
+        #[arg(
+            long = "resource",
+            help = "Exact resource ID or absolute path; repeatable. Omit to protect everything."
+        )]
+        resources: Vec<String>,
+        #[arg(long, default_value = "user")]
+        owner: String,
         #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
@@ -115,7 +166,12 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
         .items
         .iter()
         .filter(|i| {
-            category.is_none_or(|k| i.kind == k || (k == "docker" && i.kind.starts_with("docker")))
+            category.is_none_or(|k| {
+                i.kind == k
+                    || (k == "docker" && i.kind.starts_with("docker"))
+                    || (k == "python" && i.kind.starts_with("python"))
+                    || (k == "builds" && i.kind == "xcode-builds")
+            })
         })
         .collect();
     if json {
@@ -169,11 +225,7 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
             count(Status::Observing),
             count(Status::Eligible),
             count(Status::Unknown),
-            if kind == "docker-cache" {
-                "see details".into()
-            } else {
-                runtime::size_label(group.iter().map(|i| i.bytes).sum())
-            }
+            runtime::size_label(group.iter().map(|i| i.bytes).sum())
         );
     }
     println!(
@@ -181,6 +233,15 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
     );
     println!(
         "  These are inventory sizes, not a promise of space reclaimable. No combined total is shown."
+    );
+    println!(
+        "Filesystem union: {}{} (hardlinks counted once; not guaranteed reclaimable)",
+        runtime::size_label(r.storage.filesystem_allocated_union_bytes),
+        if r.storage.complete {
+            ""
+        } else {
+            " — incomplete"
+        }
     );
     if category.is_some() {
         for i in items {
@@ -192,8 +253,33 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
                 i.idle_seconds as f64 / 86400.0,
                 i.reason
             );
-            if i.kind == "docker-cache" {
-                println!("  {}", i.label);
+            println!(
+                "  Owners: {} · processes: {} · consumers: {}",
+                i.evidence.owners.join(", "),
+                i.evidence.processes.len(),
+                i.evidence.consumers.len()
+            );
+            for p in &i.evidence.processes {
+                println!(
+                    "  PID {} {} · started {}",
+                    p.pid,
+                    p.executable,
+                    p.started.as_deref().unwrap_or("unknown")
+                );
+            }
+            for r in &i.evidence.consumers {
+                println!(
+                    "  {}: {}{}",
+                    r.source,
+                    r.id,
+                    if r.protects { " (protects)" } else { "" }
+                );
+            }
+            if let Some(t) = i.evidence.native_last_used {
+                println!(
+                    "  Native last use: {t} · native use count: {:?}",
+                    i.evidence.native_usage_count
+                );
             }
         }
     }
@@ -213,12 +299,15 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
         "budget.backups" => c.backup_budget_bytes = config::bytes(value)?,
         "max-delete-per-run" => c.max_delete_bytes_per_run = config::bytes(value)?,
         "docker-cache-cleanup" => c.docker_cache_cleanup = value.parse()?,
+        "budget.package-cache" => c.cache_budget_bytes = config::bytes(value)?,
+        "maintenance-cooldown-days" => c.maintenance_cooldown_days = value.parse()?,
+        "deep-inventory" => c.deep_inventory = value.parse()?,
         "roots" => {
             c.roots = serde_json::from_str(value)
                 .context("roots must be a JSON array of absolute paths")?
         }
         _ => bail!(
-            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.docker-cache, budget.backups, max-delete-per-run, docker-cache-cleanup, or roots"
+            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.docker-cache, budget.backups, max-delete-per-run, docker-cache-cleanup, budget.package-cache, maintenance-cooldown-days, deep-inventory, or roots"
         ),
     }
     c.validate()
@@ -238,14 +327,24 @@ fn run() -> Result<()> {
     let dir = config::state_dir();
     fs::create_dir_all(&dir)?;
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-    if let Commands::Run { command } = cli.command {
-        return protected_run(&dir, command);
+    if let Commands::Run {
+        command,
+        resources,
+        owner,
+    } = cli.command
+    {
+        return aigc::leases::run(&dir, command, resources, owner);
     }
     // All config/state updates and destructive operations share one advisory lock.
     let _lock = runtime::lock(&dir)?;
     let mut c = Config::load(&dir)?;
     match cli.command {
-        Commands::Status { category, refresh } => {
+        Commands::Status {
+            category,
+            refresh,
+            owners,
+            builders,
+        } => {
             let cached = if refresh {
                 None
             } else {
@@ -264,7 +363,101 @@ fn run() -> Result<()> {
                 }
                 None => collect::prepare(&c, &dir)?,
             };
-            show(&r, category.as_deref(), cli.json)
+            show(&r, category.as_deref(), cli.json)?;
+            if !cli.json && (owners || builders) {
+                for i in r.items.iter().filter(|i| {
+                    category.as_ref().is_none_or(|k| {
+                        i.kind == *k || (k == "docker" && i.kind.starts_with("docker"))
+                    })
+                }) {
+                    println!("{}\n{}", i.id, serde_json::to_string_pretty(&i.evidence)?);
+                }
+            }
+            Ok(())
+        }
+        Commands::Inspect { id } => {
+            let r = collect::prepare(&c, &dir)?;
+            output(
+                r.items
+                    .iter()
+                    .find(|i| i.id == id)
+                    .context("resource not found")?,
+            )
+        }
+        Commands::Preview { id } => {
+            let r = collect::prepare(&c, &dir)?;
+            let item = r
+                .items
+                .iter()
+                .find(|i| i.id == id)
+                .context("resource not found")?;
+            let text = aigc::adapters::mobile::preview(item, &c)?;
+            output(
+                &serde_json::json!({"resource":id,"dry_run":true,"native_scope":"native preview may include protected candidates; it does not override aigc policy", "preview":text}),
+            )
+        }
+        Commands::Duplicates => {
+            let r = collect::prepare(&c, &dir)?;
+            output(&aigc::evidence::duplicates(&r.items))
+        }
+        Commands::Own { id, owner } => {
+            ensure!(!owner.trim().is_empty(), "owner cannot be empty");
+            c.owners.insert(id, owner);
+            c.save(&dir)?;
+            output(&c.owners)
+        }
+        Commands::Require { id, project } => {
+            ensure!(!project.trim().is_empty(), "project cannot be empty");
+            let ids = c.requirements.entry(project).or_default();
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+            c.save(&dir)?;
+            output(&c.requirements)
+        }
+        Commands::Unrequire { id, project } => {
+            if let Some(ids) = c.requirements.get_mut(&project) {
+                ids.retain(|r| r != &id);
+            }
+            c.requirements.retain(|_, ids| !ids.is_empty());
+            c.save(&dir)?;
+            output(&c.requirements)
+        }
+        Commands::Register {
+            path,
+            kind,
+            owner,
+            purpose,
+            retain_days,
+        } => {
+            ensure!(
+                (1..=3650).contains(&retain_days),
+                "retention must be 1..3650 days"
+            );
+            let path = fs::canonicalize(path)?;
+            aigc::adapters::disposable_path(&path, &kind)?;
+            c.registered.retain(|r| r.path != path);
+            c.registered.push(config::Registration {
+                path,
+                kind,
+                owner,
+                purpose,
+                retain_until: runtime::now() + retain_days * 86400,
+            });
+            c.save(&dir)?;
+            output(&c.registered)
+        }
+        Commands::Unregister { path } => {
+            let path = fs::canonicalize(&path).unwrap_or(path);
+            c.registered.retain(|r| r.path != path);
+            c.save(&dir)?;
+            output(&c.registered)
+        }
+        Commands::Leases => output(&aigc::leases::list(&dir)?),
+        Commands::ReleaseLease { id } => {
+            aigc::leases::release(&dir, &id)?;
+            let _ = fs::remove_file(dir.join("last-report.json"));
+            output(&serde_json::json!({"released":id}))
         }
         Commands::Plan | Commands::Clean { dry_run: true } => {
             let r = collect::prepare(&c, &dir)?;
@@ -315,11 +508,8 @@ fn run() -> Result<()> {
                 .find(|i| i.id == id)
                 .context("resource ID not found; copy an exact ID from aigc status --json")?;
             ensure!(
-                matches!(
-                    item.kind.as_str(),
-                    "worktrees" | "simulators" | "emulators" | "docker-images"
-                ),
-                "only worktrees, simulators, emulators and Docker images need registration"
+                item.cleanable,
+                "this resource has no supported cleanup action"
             );
             ensure!(
                 item.protection.is_none(),
@@ -329,7 +519,7 @@ fn run() -> Result<()> {
             c.managed.insert(id.clone(), owner);
             c.save(&dir)?;
             output(
-                &serde_json::json!({"managed":id,"effect":"eligible after retention and safety checks; disposable device/image contents are not backed up"}),
+                &serde_json::json!({"managed":id,"effect":"eligible after retention and safety checks; native cache maintenance may affect its entire reported scope; no universal undo"}),
             )
         }
         Commands::Unmanage { id } => {
@@ -382,46 +572,4 @@ fn run() -> Result<()> {
         ),
         Commands::Run { .. } => unreachable!(),
     }
-}
-fn protected_run(dir: &std::path::Path, args: Vec<String>) -> Result<()> {
-    let lease: PathBuf = dir
-        .join("leases")
-        .join(format!("{}.json", std::process::id()));
-    let mut child;
-    {
-        let _lock = runtime::lock(dir)?;
-        child = Command::new(&args[0])
-            .args(&args[1..])
-            .spawn()
-            .context("could not start protected command")?;
-        let pid = child.id();
-        match runtime::command("/bin/ps", &["-p", &pid.to_string(), "-o", "lstart="]) {
-            Ok(start) => {
-                if let Err(e) = config::atomic_json(
-                    &lease,
-                    &serde_json::json!({"pid":pid,"start":start.trim()}),
-                ) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(e);
-                }
-            }
-            Err(_) => {
-                if child.try_wait()?.is_none() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    bail!("could not verify child identity; command stopped");
-                }
-            }
-        }
-    }
-    let status = child.wait()?;
-    {
-        let _lock = runtime::lock(dir)?;
-        let _ = fs::remove_file(&lease);
-    }
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-    Ok(())
 }

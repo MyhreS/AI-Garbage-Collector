@@ -22,4 +22,10 @@ aigc run -- cargo build
 aigc unpin /absolute/path/to/current-task
 ```
 
-Global caches, shared SDKs and simulator runtimes are report-only in v0.1. Do not describe these as automatically collected.
+Version 0.2 reports schema 2. Read [adapter scope](ADAPTERS.md): some package caches, SDK packages and runtime disks support explicit disposal, while shared/uncertain resources remain protected. Never treat report-only storage as automatically cleanable.
+
+Use `inspect ID` for native usage, ownership, consumers and process evidence. `own ID --owner TASK` records ownership only; `require ID --project PROJECT` protects future requirements. `duplicates` is advisory and never merges environments.
+
+For generated scratch/build output use `register PATH --kind scratch --owner TASK --purpose TEXT --retain-days 30` only when the user authorized disposal. Do not register a checkout as scratch. Use `run --resource PATH --owner TASK -- COMMAND` for scoped reservations; omit resources to protect everything. Inherited background group members keep the wrapper alive. Escaped daemons need pins. Crashed wrappers leave reservations: inspect `leases` and release only after verifying the work has ended.
+
+History distinguishes `removed`, `maintained`, `no_op` and `skipped`; native reclaimed bytes may be unknown. A successful maintenance command does not imply any bytes were freed. Never sum nested/category sizes or invent last-use timestamps from Docker image creation times.

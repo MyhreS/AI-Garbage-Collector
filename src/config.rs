@@ -6,6 +6,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Registration {
+    pub path: PathBuf,
+    pub kind: String,
+    pub owner: String,
+    pub purpose: String,
+    pub retain_until: u64,
+}
+
 pub const GIB: u64 = 1024 * 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -21,6 +31,12 @@ pub struct Config {
     pub paused_until: u64,
     pub pins: Vec<String>,
     pub managed: BTreeMap<String, String>,
+    pub owners: BTreeMap<String, String>,
+    pub requirements: BTreeMap<String, Vec<String>>,
+    pub registered: Vec<Registration>,
+    pub cache_budget_bytes: u64,
+    pub maintenance_cooldown_days: u64,
+    pub deep_inventory: bool,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -46,6 +62,12 @@ impl Default for Config {
             paused_until: 0,
             pins: vec![],
             managed: BTreeMap::new(),
+            owners: BTreeMap::new(),
+            requirements: BTreeMap::new(),
+            registered: vec![],
+            cache_budget_bytes: 5 * GIB,
+            maintenance_cooldown_days: 7,
+            deep_inventory: true,
         }
     }
 }
@@ -62,6 +84,20 @@ impl Config {
         }
         if self.max_delete_bytes_per_run == 0 {
             bail!("max_delete_bytes_per_run must be positive");
+        }
+        if self.maintenance_cooldown_days == 0 || self.maintenance_cooldown_days > 3650 {
+            bail!("maintenance cooldown must be 1..3650 days");
+        }
+        for r in &self.registered {
+            if !matches!(r.kind.as_str(), "scratch" | "builds" | "python")
+                || r.owner.trim().is_empty()
+                || r.purpose.trim().is_empty()
+                || !r.path.is_absolute()
+                || !r.path.starts_with(home())
+                || r.path == home()
+            {
+                bail!("invalid registered resource");
+            }
         }
         for p in &self.roots {
             if !p.is_absolute() || p == Path::new("/") || p == &home() {

@@ -1,6 +1,8 @@
 # Cleaning up after parallel AI agents
 
-Research date: 2026-10-01. Scope: local macOS storage. This is a proposal, not a description of additional shipped cleanup behavior. The [README coverage table](../README.md#what-it-does-and-does-not-clean) remains authoritative for v0.1.
+Implementation update: v0.2 now covers the core evidence model and conservative adapters described in [adapter behavior](ADAPTERS.md). This document preserves the original research; its proposed commands and limitations are historical unless confirmed by the current README.
+
+Research date: 2026-10-01. Scope: local macOS storage. This is a proposal, not a description of additional shipped cleanup behavior. The [README coverage table](../README.md#what-it-does-and-does-not-clean) describes the current implementation.
 
 ## Recommendation
 

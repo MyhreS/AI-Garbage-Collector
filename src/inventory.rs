@@ -30,6 +30,8 @@ pub struct Item {
     pub status: Status,
     pub reason: String,
     pub idle_seconds: u64,
+    #[serde(default)]
+    pub evidence: crate::evidence::Evidence,
 }
 impl Item {
     pub fn new(
@@ -58,6 +60,7 @@ impl Item {
             status: Status::Unknown,
             reason: String::new(),
             idle_seconds: 0,
+            evidence: Default::default(),
         }
     }
 }
@@ -76,12 +79,16 @@ pub struct Report {
     pub service_installed: bool,
     pub warnings: Vec<String>,
     pub items: Vec<Item>,
+    #[serde(default)]
+    pub storage: crate::evidence::StorageSummary,
 }
 #[derive(Debug, Default)]
 pub struct Activity {
     pub reliable: bool,
     pub busy: bool,
     pub open_paths: Vec<PathBuf>,
+    pub processes: Vec<crate::evidence::Process>,
+    pub reserved: Vec<String>,
 }
 impl Activity {
     pub fn touches(&self, path: Option<&Path>) -> bool {
@@ -90,22 +97,18 @@ impl Activity {
 }
 pub fn activity(state_dir: &Path) -> Activity {
     let uid = unsafe { libc::getuid() }.to_string();
-    let files = command("/usr/sbin/lsof", &["-nP", "-a", "-u", &uid, "-Fn"]);
+    let files = command("/usr/sbin/lsof", &["-nP", "-a", "-u", &uid, "-Fpcfn"]);
     let procs = command("/bin/ps", &["-axo", "comm="]);
     let mut a = Activity {
         reliable: files.is_ok() && procs.is_ok(),
         ..Default::default()
     };
     if let Ok(files) = files {
-        a.open_paths = files
-            .lines()
-            .filter_map(|s| s.strip_prefix('n'))
-            .filter(|s| s.starts_with('/'))
-            .map(PathBuf::from)
-            .collect();
-        // Open executable/library parent directories are not activity evidence for all siblings.
+        a.processes = crate::evidence::parse_lsof(&files);
+        a.open_paths = a.processes.iter().flat_map(|p| p.paths.clone()).collect();
         a.open_paths.retain(|p| p != Path::new("/") && p != &home());
     }
+
     if let Ok(procs) = procs {
         a.busy = procs.lines().any(|p| {
             let name = Path::new(p.trim())
@@ -130,6 +133,15 @@ pub fn activity(state_dir: &Path) -> Activity {
                     | "yarn"
                     | "pip"
                     | "uv"
+                    | "python"
+                    | "python3"
+                    | "node"
+                    | "java"
+                    | "poetry"
+                    | "pip3"
+                    | "bun"
+                    | "docker"
+                    | "buildkitd"
                     | "codex"
                     | "claude"
                     | "aider"
@@ -137,26 +149,8 @@ pub fn activity(state_dir: &Path) -> Activity {
             )
         });
     }
-    if let Ok(leases) = fs::read_dir(state_dir.join("leases")) {
-        for lease in leases.flatten() {
-            let data = fs::read(lease.path())
-                .ok()
-                .and_then(|v| serde_json::from_slice::<Value>(&v).ok());
-            if let Some(v) = data {
-                if let (Some(pid), Some(start)) = (v["pid"].as_u64(), v["start"].as_str()) {
-                    if command("/bin/ps", &["-p", &pid.to_string(), "-o", "lstart="])
-                        .is_ok_and(|s| s.trim() == start)
-                    {
-                        a.busy = true;
-                    }
-                } else {
-                    a.reliable = false;
-                }
-            } else {
-                a.reliable = false;
-            }
-        }
-    }
+    crate::leases::apply(state_dir, &mut a);
+
     a
 }
 // Allocated bytes; never follow symbolic links or cross into another mounted filesystem.
@@ -197,12 +191,12 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
     }
     (bytes, modified, count, complete)
 }
-fn children(path: &Path) -> Vec<PathBuf> {
+pub(crate) fn children(path: &Path) -> Vec<PathBuf> {
     fs::read_dir(path)
         .map(|es| es.flatten().map(|e| e.path()).collect())
         .unwrap_or_default()
 }
-fn add_folder(items: &mut Vec<Item>, kind: &str, p: PathBuf, cleanable: bool) {
+pub(crate) fn add_folder(items: &mut Vec<Item>, kind: &str, p: PathBuf, cleanable: bool) {
     if p.is_dir() && !p.is_symlink() {
         items.push(Item::new(
             kind,
@@ -244,16 +238,24 @@ pub fn scan(c: &Config) -> (Vec<Item>, Vec<String>) {
             add_folder(&mut items, kind, h.join(rel), false);
         }
     }
-    discover_projects(c, &mut items, &mut warnings);
+    let projects = discover_projects(c, &mut items, &mut warnings);
     scan_simulators(&mut items, &mut warnings);
     scan_android(&mut items, &mut warnings);
     scan_docker(&mut items, &mut warnings);
+    if c.deep_inventory {
+        crate::adapters::scan(c, &projects, &mut items, &mut warnings);
+    }
     let mut seen = HashSet::new();
     items.retain(|i| seen.insert(i.id.clone()));
     items.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.id.cmp(&b.id)));
     (items, warnings)
 }
-fn discover_projects(c: &Config, items: &mut Vec<Item>, warnings: &mut Vec<String>) {
+fn discover_projects(
+    c: &Config,
+    items: &mut Vec<Item>,
+    warnings: &mut Vec<String>,
+) -> Vec<PathBuf> {
+    let mut projects = BTreeSet::new();
     let mut repos = BTreeSet::new();
     let mut visited = HashSet::new();
     for root in &c.roots {
@@ -316,6 +318,24 @@ fn discover_projects(c: &Config, items: &mut Vec<Item>, warnings: &mut Vec<Strin
             }
             if p.join(".git").exists() {
                 repos.insert(p.to_path_buf());
+            }
+            if [
+                ".git",
+                "package.json",
+                "Cargo.toml",
+                "Package.swift",
+                "pyproject.toml",
+                "build.gradle",
+                "build.gradle.kts",
+                "compose.yaml",
+                "compose.yml",
+                "docker-compose.yml",
+                "Dockerfile",
+            ]
+            .iter()
+            .any(|name| p.join(name).exists())
+            {
+                projects.insert(p.to_path_buf());
             }
             let mut generated = vec![];
             if p.join("package.json").is_file() {
@@ -413,6 +433,7 @@ fn discover_projects(c: &Config, items: &mut Vec<Item>, warnings: &mut Vec<Strin
             Err(e) => warnings.push(format!("{}: {e}", repo.display())),
         }
     }
+    projects.into_iter().collect()
 }
 pub fn worktree_safe(path: &Path) -> Result<()> {
     let status = git(
@@ -611,13 +632,14 @@ pub fn report(c: &Config, dir: &Path) -> Result<(Report, Activity)> {
     let (mut items, mut warnings) = scan(c);
     add_folder(&mut items, "recovery-backups", dir.join("backups"), false);
     let a = activity(dir);
+    let storage = crate::evidence::enrich(&mut items, c, &a);
     if !a.reliable {
         warnings.push("Activity inspection incomplete: cleanup is disabled for this scan".into());
     }
     let (total, free) = crate::runtime::disk(&home())?;
     Ok((
         Report {
-            schema_version: 1,
+            schema_version: 2,
             policy_version: crate::policy::POLICY_VERSION,
             cached: false,
             generated_at: now(),
@@ -628,6 +650,7 @@ pub fn report(c: &Config, dir: &Path) -> Result<(Report, Activity)> {
             service_installed: crate::service::plist_path().exists(),
             warnings,
             items,
+            storage,
         },
         a,
     ))

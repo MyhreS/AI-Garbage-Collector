@@ -1,6 +1,9 @@
+pub mod adapters;
 pub mod collect;
 pub mod config;
+pub mod evidence;
 pub mod inventory;
+pub mod leases;
 pub mod policy;
 pub mod runtime;
 pub mod service;

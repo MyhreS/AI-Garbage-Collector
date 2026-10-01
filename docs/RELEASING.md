@@ -4,7 +4,7 @@
 
 Pushes to `main` and pull requests call the shared **Build macOS binaries** workflow. It checks Rust formatting, lints production code, and builds Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`) executables targeting macOS 13 or newer. It runs no tests or cleanup commands.
 
-Each run uploads two archives containing the executable, README and license. Download them from the run's Artifacts section; build artifacts expire after seven days. The same workflow can be started manually from the Actions tab. No signing secrets or external services are needed.
+Each run uploads two archives containing the executable, README, detailed documentation and license. Download them from the run's Artifacts section; build artifacts expire after seven days. The same workflow can be started manually from the Actions tab. No signing secrets or external services are needed.
 
 ## Publish a release
 
@@ -12,8 +12,8 @@ Each run uploads two archives containing the executable, README and license. Dow
 2. Create and push a matching version tag:
 
    ```sh
-   git tag v0.1.0
-   git push origin v0.1.0
+   git tag v0.2.0
+   git push origin v0.2.0
    ```
 
 3. The **Release** workflow checks that the tag exists and matches the package version, then runs the shared build workflow.
@@ -36,7 +36,7 @@ Use **Actions → Update Homebrew formula → Run workflow** to refresh it manua
 A local update uses:
 
 ```sh
-python3 scripts/update-homebrew.py --tag v0.1.0 --checksums /path/to/SHA256SUMS
+python3 scripts/update-homebrew.py --tag v0.2.0 --checksums /path/to/SHA256SUMS
 ruby -c Formula/aigc.rb
 ```
 
