@@ -2,20 +2,20 @@
 class Aigc < Formula
   desc "Local garbage collector for development storage on macOS"
   homepage "https://github.com/MyhreS/AI-Garbage-Collector"
-  version "0.1.0"
+  version "0.2.0"
   license "MIT"
 
   depends_on macos: :ventura
 
   on_macos do
     on_arm do
-      url "https://github.com/MyhreS/AI-Garbage-Collector/releases/download/v0.1.0/aigc-aarch64-apple-darwin.tar.gz"
-      sha256 "5a58c523e7e19d37c0987573563cb50637d3683f082e04233450650a0e4429a0"
+      url "https://github.com/MyhreS/AI-Garbage-Collector/releases/download/v0.2.0/aigc-aarch64-apple-darwin.tar.gz"
+      sha256 "3866dfdb682181ed6f952a9739c67bad25f77bd769e9f804aa7d7d243b7e931b"
     end
 
     on_intel do
-      url "https://github.com/MyhreS/AI-Garbage-Collector/releases/download/v0.1.0/aigc-x86_64-apple-darwin.tar.gz"
-      sha256 "6629d6b339585879daddd45ca147486545e3330ae13a0027ec351ebe5aca09a3"
+      url "https://github.com/MyhreS/AI-Garbage-Collector/releases/download/v0.2.0/aigc-x86_64-apple-darwin.tar.gz"
+      sha256 "f6bb8733688e9912364929a34142fb5f3ff6f60edfac8578d19994a42080cb68"
     end
   end
 
