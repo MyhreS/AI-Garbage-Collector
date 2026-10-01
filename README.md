@@ -2,6 +2,8 @@
 
 **Keep the Mac you already own usable when coding agents fill its disk.**
 
+AI Garbage Collector exists to clean up after AI coding agents. Running many agents in parallel can leave behind abandoned worktrees, duplicated dependencies, build output, Docker cache and virtual devices. The goal is to keep limited local storage usable by identifying those leftovers and collecting what is safe to remove.
+
 `aigc` is a local command-line app and hourly background collector for development storage. It inventories Git worktrees, dependencies, build output, Docker images and cache, iOS simulators, and Android emulators. It explains what is in use, what is protected, and what can be collected.
 
 No cloud environment, subscription, account, or AI model. A release installs as one native executable; users do not need Rust, Python, or Node.
@@ -118,6 +120,10 @@ Counts are resource counts, not agent/session counts. Docker cache is one builde
 This version does **not** deduplicate dependencies, share environments between worktrees, delete Git branches, compact Docker's VM disk, uninstall Xcode, remove arbitrary `build`/`dist` folders, or sweep global IDE caches. It does not manage remote Docker endpoints, remote computers, or cloud workspaces. Windows and Linux cleanup are not supported.
 
 These generated directories are treated as disposable. Pin them if you keep manual changes or irreplaceable files inside them. Removing dependencies or build output means a later install/build may take longer and require internet access. Registered disposable simulator and emulator data is permanently deleted. There is no universal undo for caches or devices.
+
+## Planned improvements
+
+See the [cleanup research and proposed roadmap](docs/CLEANUP-RESEARCH.md) for a detailed investigation of Docker usage records, Poetry/uv environments, package stores, build caches and simulator runtimes. It describes the evidence we could collect, deletion safeguards and implementation priorities. These proposals are **not implemented features**; the coverage table above describes the current app.
 
 ## Default policy
 
@@ -263,4 +269,4 @@ This repository contains no test suite or test-only dependencies. CI and release
 
 GitHub Actions builds downloadable Apple Silicon and Intel archives on pushes to `main`, pull requests, and manual builds. Version tags publish both archives and `SHA256SUMS` to GitHub Releases. A failed build prevents publishing. See [release instructions](docs/RELEASING.md).
 
-MIT licensed. Contributions that improve activity detection, tool compatibility, recovery and tool compatibility are welcome.
+MIT licensed. Contributions that improve activity detection, tool compatibility and recovery are welcome.
