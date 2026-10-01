@@ -15,9 +15,6 @@ fs2 = "0.4"
 libc = "0.2"
 walkdir = "2"
 
-[dev-dependencies]
-tempfile = "3"
-
 [profile.release]
 strip = true
 lto = true

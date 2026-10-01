@@ -71,7 +71,7 @@ enum Commands {
     Resume,
     /// Inspect the last 500 cleanup outcomes.
     History,
-    /// Protect all resources while running a command. Use: aigc run -- npm test
+    /// Protect all resources while running a command. Use: aigc run -- npm run build
     Run {
         #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,

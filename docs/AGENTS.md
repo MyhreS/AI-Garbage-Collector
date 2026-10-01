@@ -18,7 +18,7 @@ Examples:
 aigc status worktrees --json
 aigc config set min-free-space 25GB
 aigc pin /absolute/path/to/current-task
-aigc run -- cargo test
+aigc run -- cargo build
 aigc unpin /absolute/path/to/current-task
 ```
 

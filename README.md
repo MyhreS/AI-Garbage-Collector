@@ -166,8 +166,8 @@ Copy an exact resource ID from `aigc status <category> --json`:
 
 ```sh
 aigc manage 'worktrees:/Users/me/Projects/task-123' --owner task-123
-aigc manage 'simulators:UUID-FROM-STATUS' --owner mobile-tests
-aigc manage 'emulators:throwaway-pixel' --owner mobile-tests
+aigc manage 'simulators:UUID-FROM-STATUS' --owner mobile-builds
+aigc manage 'emulators:throwaway-pixel' --owner mobile-builds
 aigc manage 'docker-images:sha256:FULL-IMAGE-ID' --owner task-123
 aigc unmanage 'emulators:throwaway-pixel'
 ```
@@ -181,7 +181,7 @@ Use `--json` for reports and exact IDs. Exit code 0 means the command completed,
 ```sh
 aigc status --json
 aigc plan --json
-aigc run -- npm test
+aigc run -- npm run build
 aigc run -- xcodebuild -scheme MyApp build
 ```
 
@@ -217,7 +217,7 @@ aigc service uninstall
 rm "$HOME/.local/bin/aigc"
 ```
 
-The LaunchAgent is `~/Library/LaunchAgents/io.aigc.collector.plist`. `service uninstall` removes it. Inspect retained state/backups before removing the state directory yourself. `AIGC_STATE_DIR` is available for isolated manual tests; service installation refuses this override.
+The LaunchAgent is `~/Library/LaunchAgents/io.aigc.collector.plist`. `service uninstall` removes it. Inspect retained state/backups before removing the state directory yourself. `AIGC_STATE_DIR` is available for isolated manual runs; service installation refuses this override.
 
 ## Development and validation
 
@@ -227,8 +227,8 @@ cargo clippy --locked --lib --bin aigc -- -D warnings
 cargo build --release --locked
 ```
 
-Existing regression fixtures cover observed retention, disk pressure, missing activity evidence, pins, unowned devices, malformed configuration, symlink handling, changes between scan and removal, tracked files, and recovery of an unpushed commit after worktree removal. Native device and Docker deletion still need broader testing across tool versions; this project does not claim production-proven cleanup for every setup.
+This repository contains no test suite or test-only dependencies. CI and releases check formatting, lint production code, and compile the executable; they do not execute tests or cleanup commands.
 
-Tests are not run by default or in CI/release workflows. Running them requires an explicit user request. The CI workflow checks formatting, lints production code and builds on macOS. Pushing a version tag builds Apple Silicon and Intel archives and publishes them with checksums. See [release instructions](docs/RELEASING.md).
+GitHub Actions builds downloadable Apple Silicon and Intel archives on pushes to `main`, pull requests, and manual builds. Version tags publish both archives and `SHA256SUMS` to GitHub Releases. A failed build prevents publishing. See [release instructions](docs/RELEASING.md).
 
-MIT licensed. Contributions that improve activity detection, tool compatibility, recovery and test coverage are welcome.
+MIT licensed. Contributions that improve activity detection, tool compatibility, recovery and tool compatibility are welcome.

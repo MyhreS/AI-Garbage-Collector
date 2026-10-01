@@ -1,16 +1,13 @@
-name: CI
-on: [push, pull_request]
+name: Build
+on:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  build:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - run: cargo fmt --check
-      - run: cargo clippy --locked --lib --bin aigc -- -D warnings
-      - run: cargo build --locked --release
-      - run: target/release/aigc --help
+  macos:
+    uses: ./.github/workflows/build.yml

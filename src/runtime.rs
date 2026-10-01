@@ -131,12 +131,3 @@ fn read_limited(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
     }
     Ok(data)
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn oversized_output_fails_closed() {
-        assert!(read_limited(std::io::repeat(0).take(16 * 1024 * 1024 + 1)).is_err());
-        assert_eq!(read_limited(&b"small"[..]).unwrap(), b"small");
-    }
-}

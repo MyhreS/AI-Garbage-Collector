@@ -1,0 +1,68 @@
+name: Build macOS binaries
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+      release:
+        type: boolean
+        default: false
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: '13.0'
+jobs:
+  check:
+    name: Formatting and production lint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Validate release version
+        if: inputs.release
+        env:
+          RELEASE_TAG: ${{ inputs.ref }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+          [ "$RELEASE_TAG" = "v$version" ]
+          git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG"
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --lib --bin aigc -- -D warnings
+  binaries:
+    name: ${{ matrix.target }}
+    needs: check
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --bin aigc --target ${{ matrix.target }}
+      - name: Package binary and documentation
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p package
+          cp "target/$TARGET/release/aigc" README.md LICENSE package/
+          tar -czf "aigc-$TARGET.tar.gz" -C package aigc README.md LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aigc-${{ matrix.target }}
+          path: aigc-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
