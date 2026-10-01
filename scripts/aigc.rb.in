@@ -22,6 +22,7 @@ class Aigc < Formula
   def install
     bin.install "aigc"
     doc.install "README.md"
+    doc.install "docs" if Dir.exist?("docs")
   end
 
   service do
