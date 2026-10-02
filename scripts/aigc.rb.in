@@ -38,8 +38,11 @@ class Aigc < Formula
 
   def caveats
     <<~EOS
-      Installation does not start cleanup. Enable the hourly collector with:
+      A direct brew install does not start cleanup. To start the hourly collector:
         brew services start myhres/aigc/aigc
+
+      For one-command installation and automatic startup, use the Brewfile:
+        curl -fsSL https://raw.githubusercontent.com/MyhreS/AI-Garbage-Collector/main/Brewfile | brew bundle --file=-
 
       Inspect resources with:
         aigc status

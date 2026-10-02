@@ -16,13 +16,15 @@ Requires macOS 13 or newer. Apple Silicon and Intel binaries are available.
 
 ### Homebrew
 
+Install and start the hourly collector with one command:
+
 ```sh
-brew tap myhres/aigc https://github.com/MyhreS/AI-Garbage-Collector
-brew install myhres/aigc/aigc
-brew services start myhres/aigc/aigc
+curl -fsSL https://raw.githubusercontent.com/MyhreS/AI-Garbage-Collector/main/Brewfile | brew bundle --file=-
 ```
 
-The project repository also serves as a [custom Homebrew tap](https://docs.brew.sh/Taps). Homebrew downloads the matching release binary and verifies its checksum; no Rust installation is needed. `brew install` installs the executable. `brew services start` enables hourly cleanup using the defaults below. Use your normal user account, without `sudo`.
+The [Brewfile](Brewfile) adds the project's [custom Homebrew tap](https://docs.brew.sh/Taps), installs the release binary, and starts its per-user LaunchAgent immediately. It runs again every hour while you are logged in and starts at login. No `aigc start` command, Rust installation, or administrator access is needed. Homebrew verifies the release checksum.
+
+If you run `brew install myhres/aigc/aigc` directly, Homebrew only installs the executable; it cannot automatically start a formula's service. Use the command above for install-and-start, or run `brew services start myhres/aigc/aigc` after a direct install.
 
 If switching from the standalone installer, run `aigc service uninstall` before starting the Homebrew service. Both use the same service identity so there should be only one collector. Manage a Homebrew installation with `brew services`, rather than `aigc service install`.
 
@@ -147,7 +149,7 @@ See [adapter behavior and limitations](docs/ADAPTERS.md) for exact scope, and th
 
 ## Default policy
 
-The standalone installer starts the service immediately; Homebrew starts it when you run `brew services start`. Each hourly run inventories resources and removes those that qualify:
+Both recommended installers start the service immediately. Each hourly run inventories resources and removes those that qualify:
 
 | Setting | Default |
 | --- | --- |
