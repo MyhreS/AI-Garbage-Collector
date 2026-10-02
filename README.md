@@ -22,7 +22,7 @@ Install and start the hourly collector with one command:
 curl -fsSL https://raw.githubusercontent.com/MyhreS/AI-Garbage-Collector/main/Brewfile | brew bundle --file=-
 ```
 
-The [Brewfile](Brewfile) adds the project's [custom Homebrew tap](https://docs.brew.sh/Taps), installs the release binary, and starts its per-user LaunchAgent immediately. It runs again every hour while you are logged in and starts at login. No `aigc start` command, Rust installation, or administrator access is needed. Homebrew verifies the release checksum.
+The [Brewfile](Brewfile) adds the project's [custom Homebrew tap](https://docs.brew.sh/Taps), trusts this formula, installs the release binary, and starts its per-user LaunchAgent immediately. It runs again every hour while you are logged in and starts at login. No `aigc start` command, Rust installation, or administrator access is needed. Homebrew verifies the release checksum.
 
 If you run `brew install myhres/aigc/aigc` directly, Homebrew only installs the executable; it cannot automatically start a formula's service. Use the command above for install-and-start, or run `brew services start myhres/aigc/aigc` after a direct install.
 
