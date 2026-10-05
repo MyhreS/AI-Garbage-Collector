@@ -4,7 +4,7 @@ Use the installed `aigc` executable. Do not copy its deletion logic into shell s
 
 1. Run `aigc status --json`. Inspect `warnings`, `complete`, `status`, and `reason`.
 2. Run builds or foreground sessions through `aigc run -- <command>`. Pins are appropriate for work that must survive between sessions.
-3. Register virtual devices and images only when their owner has authorized disposal. Regular linked worktrees are automatically eligible after seven days since their latest file write, HEAD commit or detected use.
+3. Register virtual devices only when their owner has authorized disposal. Regular linked worktrees are automatically eligible after seven days since their latest file write, HEAD commit or detected use.
 4. Run `aigc plan --json` to review current decisions. `clean` only acts on eligible resources and rechecks them.
 5. Report actual outcomes from `history`; never add overlapping category sizes into a claimed reclaimed total.
 
@@ -28,4 +28,4 @@ Use `inspect ID` for native usage, ownership, consumers and process evidence. `o
 
 For generated scratch/build output use `register PATH --kind scratch --owner TASK --purpose TEXT --retain-days 30` only when the user authorized disposal. Do not register a checkout as scratch. Use `run --resource PATH --owner TASK -- COMMAND` for scoped reservations; omit resources to protect everything. Inherited background group members keep the wrapper alive. Escaped daemons need pins. Crashed wrappers leave reservations: inspect `leases` and release only after verifying the work has ended.
 
-History distinguishes `removed`, `maintained`, `no_op` and `skipped`; native reclaimed bytes may be unknown. A successful maintenance command does not imply any bytes were freed. Never sum nested/category sizes or invent last-use timestamps from Docker image creation times.
+History distinguishes `removed`, `maintained`, `no_op` and `skipped`; native reclaimed bytes may be unknown. A successful maintenance command does not imply any bytes were freed. Never sum nested/category sizes.

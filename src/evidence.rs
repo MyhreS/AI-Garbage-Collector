@@ -41,11 +41,6 @@ pub enum Action {
         manager: String,
         root: PathBuf,
     },
-    Buildkit {
-        builder: String,
-        endpoint: String,
-        record: String,
-    },
     Runtime {
         uuid: String,
         build: String,
@@ -235,7 +230,7 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
         .iter()
         .filter(|p| !roots.iter().any(|q| q != *p && p.starts_with(q)))
         .collect();
-    let mut summary = StorageSummary { complete: items.iter().filter(|i| i.path.is_some()).all(|i| i.complete), note: "Filesystem union counts hardlinks once and excludes nested duplicate totals. APFS clone/snapshot sharing and Docker VM internals are not exact reclaimable bytes.".into(), ..Default::default() };
+    let mut summary = StorageSummary { complete: items.iter().filter(|i| i.path.is_some()).all(|i| i.complete), note: "Filesystem union counts hardlinks once and excludes nested duplicate totals. APFS clone/snapshot sharing are not exact reclaimable bytes.".into(), ..Default::default() };
     let mut seen = HashSet::new();
     'roots: for p in roots {
         for entry in WalkDir::new(p).follow_links(false).same_file_system(true) {

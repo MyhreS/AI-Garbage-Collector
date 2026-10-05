@@ -3,7 +3,7 @@ use crate::{
     policy::Status,
     runtime::{command, git, now},
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -141,8 +141,6 @@ pub fn activity(state_dir: &Path) -> Activity {
                     | "poetry"
                     | "pip3"
                     | "bun"
-                    | "docker"
-                    | "buildkitd"
                     | "codex"
                     | "claude"
                     | "aider"
@@ -242,7 +240,6 @@ pub fn scan(c: &Config) -> (Vec<Item>, Vec<String>) {
     let projects = discover_projects(c, &mut items, &mut warnings);
     scan_simulators(&mut items, &mut warnings);
     scan_android(&mut items, &mut warnings);
-    scan_docker(&mut items, &mut warnings);
     if c.deep_inventory {
         crate::adapters::scan(c, &projects, &mut items, &mut warnings);
     }
@@ -328,10 +325,6 @@ fn discover_projects(
                 "pyproject.toml",
                 "build.gradle",
                 "build.gradle.kts",
-                "compose.yaml",
-                "compose.yml",
-                "docker-compose.yml",
-                "Dockerfile",
             ]
             .iter()
             .any(|name| p.join(name).exists())
@@ -597,90 +590,6 @@ fn scan_android(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
     }
     if !root.exists() {
         warnings.push("Android AVD directory not present".into());
-    }
-}
-pub fn local_docker() -> Result<()> {
-    // Never operate on remote Docker contexts, including environment overrides.
-    anyhow::ensure!(
-        std::env::var_os("DOCKER_HOST").is_none(),
-        "DOCKER_HOST override is protected; use a local Docker context"
-    );
-    let context = command("docker", &["context", "show"])?;
-    let raw = command("docker", &["context", "inspect", context.trim()])?;
-    let v: Value = serde_json::from_str(&raw)?;
-    let endpoint = v[0]["Endpoints"]["docker"]["Host"]
-        .as_str()
-        .context("Docker endpoint missing")?;
-    anyhow::ensure!(
-        endpoint.starts_with("unix://"),
-        "remote Docker contexts are outside this tool's scope"
-    );
-    Ok(())
-}
-fn scan_docker(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
-    let result = (|| -> Result<()> {
-        local_docker()?;
-        let ids = command("docker", &["image", "ls", "-aq", "--no-trunc"])?;
-        let container_ids = command("docker", &["container", "ls", "-aq"])?;
-        let mut used = HashSet::new();
-        for id in container_ids.lines() {
-            let data = command("docker", &["container", "inspect", id])?;
-            let v: Value = serde_json::from_str(&data)?;
-            if let Some(id) = v[0]["Image"].as_str() {
-                used.insert(id.to_string());
-            }
-        }
-        for id in ids.lines().collect::<BTreeSet<_>>() {
-            let raw = command("docker", &["image", "inspect", id])?;
-            let v: Value = serde_json::from_str(&raw)?;
-            let v = &v[0];
-            let tag = v["RepoTags"][0].as_str().unwrap_or(id);
-            let mut i = Item::new(
-                "docker-images",
-                format!("docker-images:{id}"),
-                tag.into(),
-                None,
-                true,
-            );
-            i.bytes = v["Size"].as_u64().unwrap_or(0);
-            i.active = used.contains(id);
-            items.push(i);
-        }
-        let df = command("docker", &["system", "df", "--format", "{{json .}}"])?;
-        for line in df.lines() {
-            let v: Value = serde_json::from_str(line)?;
-            if v["Type"] == "Build Cache" {
-                let mut i = Item::new(
-                    "docker-cache",
-                    "docker-cache:default".into(),
-                    format!(
-                        "Default builder: {} total; {} reclaimable (Docker)",
-                        v["Size"].as_str().unwrap_or("unknown"),
-                        v["Reclaimable"].as_str().unwrap_or("unknown")
-                    ),
-                    None,
-                    true,
-                );
-                i.entries = v["TotalCount"]
-                    .as_u64()
-                    .or_else(|| v["TotalCount"].as_str().and_then(|s| s.parse().ok()))
-                    .unwrap_or(0);
-                // Human-formatted Docker sizes are kept as labels; do not pretend these are exact bytes.
-                i.active = v["Active"]
-                    .as_u64()
-                    .or_else(|| v["Active"].as_str().and_then(|s| s.parse().ok()))
-                    .unwrap_or(1)
-                    > 0;
-                items.push(i);
-            }
-        }
-        Ok(())
-    })();
-    if let Err(e) = result {
-        warnings.push(format!("Docker inventory unavailable or incomplete: {e}"));
-        for i in items.iter_mut().filter(|i| i.kind.starts_with("docker")) {
-            i.complete = false;
-        }
     }
 }
 pub fn report(c: &Config, dir: &Path) -> Result<(Report, Activity)> {

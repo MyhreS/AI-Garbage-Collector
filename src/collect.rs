@@ -2,7 +2,7 @@ use crate::{
     config::{Config, atomic_json, home},
     inventory::{self, Item, Report},
     policy::{self, Status},
-    runtime::{canonical, command, command_at, git, now},
+    runtime::{canonical, command, git, now},
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
@@ -99,7 +99,7 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
         let native_reclaimed = result.as_ref().ok().and_then(|s| native_bytes(s));
         let maintenance = matches!(
             item.evidence.action,
-            Some(crate::evidence::Action::Cache { .. } | crate::evidence::Action::Buildkit { .. })
+            Some(crate::evidence::Action::Cache { .. })
         );
         let (outcome, detail, estimate) = match result {
             Ok(detail) => {
@@ -424,56 +424,6 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             );
             command(tool.to_str().unwrap(), &["delete", "avd", "-n", name])?;
             Ok("Deleted disposable Android AVD and its app data using avdmanager".into())
-        }
-        "docker-images" => {
-            ensure!(
-                !item.active,
-                "image is referenced by a container; removal refused"
-            );
-            ensure!(
-                c.managed.contains_key(&item.id),
-                "image not registered as disposable"
-            );
-            inventory::local_docker()?;
-            let id = item
-                .id
-                .strip_prefix("docker-images:")
-                .context("invalid image ID")?;
-            ensure!(
-                id.starts_with("sha256:")
-                    && id[7..].len() == 64
-                    && id[7..].chars().all(|c| c.is_ascii_hexdigit()),
-                "invalid Docker image ID"
-            );
-            // Docker refuses removal when a container references the image. Never force.
-            command("docker", &["image", "rm", id])?;
-            Ok("Removed disposable image through Docker without force".into())
-        }
-        "docker-cache" => {
-            ensure!(c.docker_cache_cleanup, "Docker cache cleanup disabled");
-            inventory::local_docker()?;
-            let days = if crate::runtime::disk(&home())?.1 < c.min_free_bytes {
-                c.pressure_retention_days
-            } else {
-                c.retention_days
-            };
-            let filter = format!("until={}h", days * 24);
-            let budget = c.docker_cache_budget_bytes.to_string();
-            let out = command_at(
-                "docker",
-                &[
-                    "builder",
-                    "prune",
-                    "--force",
-                    "--filter",
-                    &filter,
-                    "--keep-storage",
-                    &budget,
-                ],
-                None,
-                300,
-            )?;
-            Ok(out.trim().into())
         }
         _ => bail!("report-only resource"),
     }

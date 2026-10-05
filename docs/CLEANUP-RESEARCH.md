@@ -6,7 +6,7 @@ Research date: 2026-10-01. Scope: local macOS storage. This is a proposal, not a
 
 ## Recommendation
 
-Build richer inventory and ownership information before broadening automatic deletion. Start with Docker build cache and Python environments: both can grow across many agent tasks, and their tools expose useful metadata beyond folder size. Then add package-store maintenance and build-output ownership. Keep SDK and simulator-runtime removal explicit until their consumers can be identified reliably.
+Build richer inventory and ownership information before broadening automatic deletion. Start with Python environments: these can grow across many agent tasks, and their tools expose useful metadata beyond folder size. Then add package-store maintenance and build-output ownership. Keep SDK and simulator-runtime removal explicit until their consumers can be identified reliably.
 
 The product should answer four questions for every resource:
 
@@ -27,50 +27,12 @@ Source reviewed: `src/inventory.rs`, `src/policy.rs`, `src/collect.rs` and `src/
 | Processes | Open paths from `lsof`, recognized process names, global build/agent deferral | Open paths are not retained as PID-to-resource relationships; no agent/session attribution |
 | Reservations | `aigc run` child PID and start time | Protects everything; no resource-specific reservations or detached child lifecycle |
 | Worktrees | Git registration, locks, working-tree changes including ignored files, recovery eligibility | No exact agent identity; app-managed trees remain protected |
-| Docker images | Image ID, first tag, size, references from running and stopped containers | No complete tag set, Compose requirements, historical use or unique-space accounting |
-| Docker build cache | Default builder aggregate count and Docker size/reclaimability text | No per-record last use, usage count, parent relationships or other local builders |
 | Python | Recognized project-local `.venv` | No central Poetry environments, tool environments or shared-environment references |
 | Devices | Device inventory and current state | Shutdown does not establish abandonment; runtime consumers are not mapped |
 
 The earlier discussion of deeper worktree statistics was a design investigation. It did not implement per-agent ownership. The same evidence model proposed below should support worktrees and the other categories.
 
-## 1. Docker: separate images from build cache
-
-### Build cache is the strongest initial adapter
-
-`docker buildx du --format=json` exposes cache-record IDs, parents, creation and last-use times, usage counts, sizes, shared/mutable/reclaimable flags and record types. Its JSON output is newline-delimited. These are cache records, not image popularity statistics. [Buildx disk-usage reference](https://docs.docker.com/reference/cli/docker/buildx/du/).
-
-**Proposed inventory:** enumerate explicitly local builders, validate every builder node's endpoint, then collect records per builder. A local Docker context does not establish that every Buildx builder is local. Unavailable or remote builders should appear as skipped, never as empty. Record native field availability because installed Buildx versions differ.
-
-**Proposed cleanup:** use the selected builder's native pruning with supported age and capacity controls. Buildx supports last-use age filtering, record/type/sharedness selectors and space controls. BuildKit also has its own periodic GC policies. Prefer configuring or invoking these mechanisms over deleting cache directories. [Buildx prune](https://docs.docker.com/reference/cli/docker/buildx/prune/), [BuildKit GC](https://docs.docker.com/build/cache/garbage-collection/).
-
-Keep expensive cache mounts conservatively until their use and rebuild cost are understood. Preview scope and estimated savings, then re-query immediately before native pruning. If a requested pin cannot be expressed by the installed native filters, skip that pruning scope. Never present a broad native prune as an exact approved list of record deletions.
-
-### Images need references, not a top-three rule
-
-There is no general Docker image last-used counter comparable to BuildKit's cache usage fields. Image creation time is not last use: image pruning's `until` filter selects by creation time. An old image can power today's workload. [Image prune reference](https://docs.docker.com/reference/cli/docker/image/prune/).
-
-Add these relationships to an image report:
-
-- All tags and repository digests, plus immutable local image ID.
-- Every running and stopped container that refers to it.
-- Discovered Compose image declarations and resolved Dockerfile base-image references.
-- Explicit task ownership and disposable status, stored separately.
-- Last observed container use, with observation coverage and gaps.
-
-Compose can output image names through `docker compose config --images`. Configuration involves variable resolution, so missing variables, overrides and profiles can leave requirements unresolved. Extract only necessary references; do not persist expanded secrets or whole environments. Dynamic Dockerfile arguments and external scripts can also leave unknown requirements. [Compose config](https://docs.docker.com/reference/cli/docker/compose/config/).
-
-Docker events could improve observations, but only the latest 256 historical events are returned. An hourly poll can miss activity. A future event listener needs bounded local history and an explicit gap marker when disconnected. Missing events must never imply non-use. [Docker events](https://docs.docker.com/reference/cli/docker/system/events/).
-
-**Deletion rule:** retain the current explicit disposable registration, pins, container protection and non-forced exact-ID removal. Add protection for known project requirements. Never introduce a popularity quota. No container reference means only that no existing container uses the image; it does not prove nobody will need it tomorrow.
-
-### Report savings honestly
-
-Docker's verbose disk report distinguishes shared and unique image size. Removing one of several tags or an image with shared layers may reclaim very little. Report these separately from logical image size. [Docker disk usage](https://docs.docker.com/reference/cli/docker/system/df/).
-
-Docker Desktop stores data in a VM disk image. Show engine-reported reclaimed space separately from observed host free-space change; reclaim timing and sparse allocation affect the latter. Never remove or truncate `Docker.raw`. [Docker Desktop Mac storage FAQ](https://docs.docker.com/desktop/troubleshoot-and-support/faqs/macfaqs/).
-
-## 2. Poetry, uv and redundant Python environments
+## 1. Poetry, uv and redundant Python environments
 
 ### Discover ownership before looking for duplicates
 
@@ -107,7 +69,7 @@ The current centralized-project-environment feature is a preview and can place `
 
 Poetry exposes cache listing and scoped clearing, but these are not proof of project abandonment. Pip exposes configured cache location, size information, wheel listing and removal; a full purge also clears HTTP cache. Prefer occasional budget-based maintenance to wholesale purges. Preserve expensive source-built wheels and explain likely downloads. [Poetry CLI](https://python-poetry.org/docs/cli/), [pip caching](https://pip.pypa.io/en/stable/topics/caching/).
 
-## 3. JavaScript dependencies and browser downloads
+## 2. JavaScript dependencies and browser downloads
 
 | Candidate | Evidence and proposed behavior |
 | --- | --- |
@@ -124,7 +86,7 @@ pnpm supports pruning unreferenced packages and rejects pruning while its store 
 
 Playwright already tracks packages needing its browsers and garbage-collects older revisions as packages update. It also supports shared custom paths and project-local browser installations. Let its ownership mechanism guide collection; do not delete a browser because another project uses a newer version. [Playwright browser management](https://playwright.dev/docs/browsers).
 
-## 4. Build output: resolve the real destination
+## 3. Build output: resolve the real destination
 
 ### Rust
 
@@ -146,7 +108,7 @@ Improve DerivedData inventory with project/workspace association where available
 
 A future build wrapper can record output paths directly, which is stronger than guessing from a directory name. Preserve native application ownership for app-managed data.
 
-## 5. Simulators, runtimes and Android SDK packages
+## 4. Simulators, runtimes and Android SDK packages
 
 ### iOS runtimes: native age information exists
 
@@ -170,23 +132,23 @@ Build proposed relationships from AVD configuration to system image; from projec
 
 Delete only an explicitly disposable inactive AVD or explicitly selected SDK package with no retained known consumer. Preserve snapshots/user data unless disposal was authorized. Never infer that a downloaded package is unused merely because its version is old.
 
-## 6. Other worthwhile candidates
+## 5. Other worthwhile candidates
 
 Homebrew offers native cleanup and dry-run support. Add a report of downloadable cache and obsolete-version cleanup candidates, with the native preview shown before any opt-in action. Do not extend this into uninstalling current developer tools or automatic `autoremove`. [Homebrew manual](https://docs.brew.sh/Manpage).
 
-Agent-owned logs, temporary downloads, packaging staging folders and duplicate release clones are useful future targets **when registered at creation** with owner and retention deadline. Generic `dist`, `build`, Downloads and `/tmp` sweeps are inappropriate: names do not establish ownership or reproducibility. Persistent databases, Docker volumes, credentials, user documents and saved agent conversations remain outside automatic cleanup.
+Agent-owned logs, temporary downloads, packaging staging folders and duplicate release clones are useful future targets **when registered at creation** with owner and retention deadline. Generic `dist`, `build`, Downloads and `/tmp` sweeps are inappropriate: names do not establish ownership or reproducibility. Persistent databases, credentials, user documents and saved agent conversations remain outside automatic cleanup.
 
 ## Shared design for richer statistics
 
 ### Evidence and relationships
 
-Represent resources and consumers separately. A task may own an environment; several projects may consume one cache; a container refers to an image; an AVD refers to an SDK image. Ownership alone does not authorize disposal.
+Represent resources and consumers separately. A task may own an environment; several projects may consume one cache; an AVD refers to an SDK image. Ownership alone does not authorize disposal.
 
 Proposed fields:
 
 | Field | Meaning |
 | --- | --- |
-| Stable resource identity | Native ID plus local engine/builder, or canonical path plus filesystem identity |
+| Stable resource identity | Native ID or canonical path plus filesystem identity |
 | Owners and consumers | Task IDs, worktrees, projects, processes and other resources; include evidence source |
 | Process identity | PID plus process start time, executable, relevant cwd/open-path association; never PID alone |
 | Usage times | Native last-use, last observed use, first seen and observation gaps as separate fields |
@@ -199,7 +161,7 @@ Use process trees and resource-specific leases to improve attribution. Foregroun
 
 ### Space accounting
 
-Count nested resources once in totals: a worktree already contains its `node_modules`. Deduplicate hardlinked inodes across the inventory where possible. APFS clone extents and snapshots make exact physical reclamation harder; expose unknown/shared estimates rather than subtracting logical sizes. Docker owns its internal layer accounting.
+Count nested resources once in totals: a worktree already contains its `node_modules`. Deduplicate hardlinked inodes across the inventory where possible. APFS clone extents and snapshots make exact physical reclamation harder; expose unknown/shared estimates rather than subtracting logical sizes.
 
 Track native-reported reclaimed bytes, estimated removed bytes and observed host free-space delta separately. Record no-op pruning as a no-op. Add rebuild/download churn statistics so repeatedly deleting useful cache does not look like success.
 
@@ -221,11 +183,10 @@ The commands below are **design examples, not available commands**:
 ```text
 aigc inspect RESOURCE --json
 aigc status python --owners
-aigc status docker --builders
 aigc duplicates --json
 ```
 
-An inspection should explain “protected: referenced by stopped container” or “unknown: Poetry project mapping incomplete,” show the source and timestamp, and list expected rebuild consequences. A duplicate report should show candidates and confidence rather than imply safe interchangeability.
+An inspection should explain “unknown: Poetry project mapping incomplete,” show the source and timestamp, and list expected rebuild consequences. A duplicate report should show candidates and confidence rather than imply safe interchangeability.
 
 Keep baseline scans cheap. Cache slow size walks, bound process/event history, expire stale observations conservatively and offer deeper inspection on demand. Do not hash entire environments on every hourly pass. Avoid retaining command arguments, credentials, prompts or source contents in status/history.
 
@@ -234,7 +195,7 @@ Keep baseline scans cheap. Cache slow size walks, bound process/event history, e
 | Phase | Deliverable | Initial deletion scope |
 | --- | --- | --- |
 | 1 | Resource/consumer relationships, PID attribution, evidence timestamps, correct overlapping-size accounting, detailed inspection | Existing scope only |
-| 2 | Per-builder BuildKit records; Poetry/uv environment mapping; configured cache paths | Report first; existing Docker image protections retained |
+| 2 | Poetry/uv environment mapping; configured cache paths | Report first |
 | 3 | Narrow cleanup of registered abandoned environments; version-aware native cache maintenance with budgets/cooldowns | Opt-in adapters; no shared mutable-environment deduplication |
 | 4 | Rust/Gradle/Xcode output ownership, Playwright/npx inventory, task-specific reservations | Known generated output with retained-consumer protection |
 | 5 | Runtime age preview and device/SDK dependency relationships | Explicit runtime/package cleanup after complete evidence |

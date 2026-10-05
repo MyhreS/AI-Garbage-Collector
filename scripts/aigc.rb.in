@@ -33,7 +33,7 @@ class Aigc < Formula
     run_at_load true
     working_dir Dir.home
     environment_variables HOME: Dir.home,
-                          PATH: "#{Dir.home}/.local/bin:#{Dir.home}/.docker/bin:/usr/local/bin:#{std_service_path_env}"
+                          PATH: "#{Dir.home}/.local/bin:/usr/local/bin:#{std_service_path_env}"
   end
 
   def caveats

@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 6;
+pub const POLICY_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -107,15 +107,8 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             .registered
             .iter()
             .find(|r| i.path.as_ref() == Some(&r.path));
-        let needs_registration = i
-            .evidence
-            .action
-            .as_ref()
-            .is_some_and(|a| !matches!(a, crate::evidence::Action::Buildkit { .. }))
-            || matches!(
-                i.kind.as_str(),
-                "simulators" | "emulators" | "docker-images"
-            );
+        let needs_registration =
+            i.evidence.action.is_some() || matches!(i.kind.as_str(), "simulators" | "emulators");
         let cooldown = s
             .maintenance
             .get(&i.id)
@@ -180,8 +173,6 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                 Status::Protected,
                 "not registered as disposable; use aigc manage".into(),
             )
-        } else if i.kind == "docker-cache" && !c.docker_cache_cleanup {
-            (Status::Protected, "Docker cache cleanup disabled".into())
         } else if a.global_reserved {
             (Status::Protected, "aigc run reserves all resources".into())
         } else if a.busy && !worktree {
@@ -193,27 +184,6 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             (
                 Status::Protected,
                 "cache is within its configured budget".into(),
-            )
-        } else if i.kind == "docker-cache" && i.evidence.action.is_none() {
-            (
-                Status::Protected,
-                "structured BuildKit inventory required for bounded pruning".into(),
-            )
-        } else if i.kind == "docker-cache"
-            && i.evidence
-                .native_last_used
-                .is_some_and(|last| time.saturating_sub(last) < days * 86400)
-        {
-            (
-                Status::Observing,
-                "native cache last use is recent or unknown".into(),
-            )
-        } else if i.kind == "docker-cache" {
-            (
-                Status::Eligible,
-                format!(
-                    "Docker applies its native {days}-day cache age filter and configured storage budget"
-                ),
             )
         } else if i.idle_seconds < days * 86400 {
             (

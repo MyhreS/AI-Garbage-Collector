@@ -31,15 +31,13 @@ enum Commands {
     /// Inspect resources, sizes, activity and cleanup eligibility. Updates observation history.
     Status {
         #[arg(
-            help = "Filter: worktrees, docker, simulators, emulators, dependencies, builds, sdk, runtimes"
+            help = "Filter: worktrees, simulators, emulators, dependencies, builds, sdk, runtimes"
         )]
         category: Option<String>,
         #[arg(long, help = "Ignore the cached snapshot and inspect resources again")]
         refresh: bool,
         #[arg(long, help = "Show owner and process evidence")]
         owners: bool,
-        #[arg(long, help = "Show per-builder cache evidence")]
-        builders: bool,
     },
     /// Inspect one exact resource with ownership, native metadata and all recorded blockers.
     Inspect { id: String },
@@ -168,7 +166,6 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
         .filter(|i| {
             category.is_none_or(|k| {
                 i.kind == k
-                    || (k == "docker" && i.kind.starts_with("docker"))
                     || (k == "python" && i.kind.starts_with("python"))
                     || (k == "builds" && i.kind == "xcode-builds")
             })
@@ -228,9 +225,7 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
             runtime::size_label(group.iter().map(|i| i.bytes).sum())
         );
     }
-    println!(
-        "\n* Category sizes overlap (worktrees include dependencies); Docker image layers can be shared."
-    );
+    println!("\n* Category sizes overlap (worktrees include dependencies).");
     println!(
         "  These are inventory sizes, not a promise of space reclaimable. No combined total is shown."
     );
@@ -295,10 +290,8 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
             c.pressure_retention_days = value.trim_end_matches('d').parse()?
         }
         "min-free-space" => c.min_free_bytes = config::bytes(value)?,
-        "budget.docker-cache" => c.docker_cache_budget_bytes = config::bytes(value)?,
         "budget.backups" => c.backup_budget_bytes = config::bytes(value)?,
         "max-delete-per-run" => c.max_delete_bytes_per_run = config::bytes(value)?,
-        "docker-cache-cleanup" => c.docker_cache_cleanup = value.parse()?,
         "worktree-cleanup" => c.worktree_cleanup = value.parse()?,
         "worktree-force" => c.worktree_force = value.parse()?,
         "worktree-require-pr-verification" => c.worktree_require_pr_verification = value.parse()?,
@@ -310,7 +303,7 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
                 .context("roots must be a JSON array of absolute paths")?
         }
         _ => bail!(
-            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.docker-cache, budget.backups, max-delete-per-run, docker-cache-cleanup, worktree-cleanup, worktree-force, worktree-require-pr-verification, budget.package-cache, maintenance-cooldown-days, deep-inventory, or roots"
+            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.backups, max-delete-per-run, worktree-cleanup, worktree-force, worktree-require-pr-verification, budget.package-cache, maintenance-cooldown-days, deep-inventory, or roots"
         ),
     }
     c.validate()
@@ -346,7 +339,6 @@ fn run() -> Result<()> {
             category,
             refresh,
             owners,
-            builders,
         } => {
             let cached = if refresh {
                 None
@@ -367,12 +359,12 @@ fn run() -> Result<()> {
                 None => collect::prepare(&c, &dir)?,
             };
             show(&r, category.as_deref(), cli.json)?;
-            if !cli.json && (owners || builders) {
-                for i in r.items.iter().filter(|i| {
-                    category.as_ref().is_none_or(|k| {
-                        i.kind == *k || (k == "docker" && i.kind.starts_with("docker"))
-                    })
-                }) {
+            if !cli.json && owners {
+                for i in r
+                    .items
+                    .iter()
+                    .filter(|i| category.as_ref().is_none_or(|k| i.kind == *k))
+                {
                     println!("{}\n{}", i.id, serde_json::to_string_pretty(&i.evidence)?);
                 }
             }

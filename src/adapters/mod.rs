@@ -12,7 +12,6 @@ use std::{
 };
 pub mod builds;
 pub mod caches;
-pub mod docker;
 pub mod mobile;
 pub mod python;
 
@@ -32,9 +31,6 @@ pub fn tool(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<String> 
 }
 pub fn json(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Value> {
     Ok(serde_json::from_str(&tool(program, args, cwd)?)?)
-}
-pub fn integer(v: &Value) -> Option<u64> {
-    v.as_u64().or_else(|| v.as_str()?.parse().ok())
 }
 pub fn epoch(v: &Value) -> Option<u64> {
     let s = v.as_str()?;
@@ -68,7 +64,6 @@ pub fn scan(c: &Config, projects: &[PathBuf], items: &mut Vec<Item>, warnings: &
     python::scan(selected, items, warnings);
     caches::scan(items, warnings);
     builds::scan(selected, items, warnings);
-    docker::scan(c, selected, items, warnings);
     mobile::scan(c, selected, items, warnings);
     for r in &c.registered {
         if !r.path.exists() {
@@ -106,10 +101,7 @@ pub fn scan(c: &Config, projects: &[PathBuf], items: &mut Vec<Item>, warnings: &
             .iter()
             .any(|w| w.contains("project discovery") || w.contains("skipped symlink root"));
     if incomplete {
-        for i in items
-            .iter_mut()
-            .filter(|i| i.evidence.action.is_some() || i.kind == "docker-images")
-        {
+        for i in items.iter_mut().filter(|i| i.evidence.action.is_some()) {
             i.complete = false;
         }
     }
@@ -240,11 +232,6 @@ pub fn remove(i: &Item, c: &Config) -> Result<String> {
             Ok("Removed disposable environment through Poetry".into())
         }
         Action::Cache { manager, root } => caches::remove(manager, root, c),
-        Action::Buildkit {
-            builder,
-            endpoint,
-            record,
-        } => docker::remove_cache(builder, endpoint, record, c),
         Action::Runtime { uuid, build } => mobile::remove_runtime(uuid, build, c),
         Action::Sdk { root, package } => mobile::remove_sdk(root, package),
     }

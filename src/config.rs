@@ -24,9 +24,7 @@ pub struct Config {
     pub retention_days: u64,
     pub pressure_retention_days: u64,
     pub min_free_bytes: u64,
-    pub docker_cache_budget_bytes: u64,
     pub backup_budget_bytes: u64,
-    pub docker_cache_cleanup: bool,
     pub worktree_cleanup: bool,
     pub worktree_force: bool,
     pub worktree_require_pr_verification: bool,
@@ -58,9 +56,7 @@ impl Default for Config {
             retention_days: 7,
             pressure_retention_days: 7,
             min_free_bytes: 20 * GIB,
-            docker_cache_budget_bytes: 5 * GIB,
             backup_budget_bytes: 2 * GIB,
-            docker_cache_cleanup: true,
             worktree_cleanup: true,
             worktree_force: true,
             worktree_require_pr_verification: false,
@@ -117,9 +113,15 @@ impl Config {
         let c: Self = if p.exists() {
             let mut value: serde_json::Value = serde_json::from_slice(&fs::read(p)?)
                 .context("invalid config.json; collection refused")?;
-            // Ignore the retired ranking setting when reading older installations.
+            // Discard retired settings when upgrading older installations.
             if let Some(object) = value.as_object_mut() {
-                object.remove("docker_keep_most_used");
+                for key in [
+                    "docker_keep_most_used",
+                    "docker_cache_budget_bytes",
+                    "docker_cache_cleanup",
+                ] {
+                    object.remove(key);
+                }
             }
             serde_json::from_value(value).context("invalid config.json; collection refused")?
         } else {

@@ -1,6 +1,6 @@
-# Adapter behavior in v0.4
+# Adapter behavior in v0.5
 
-AI Garbage Collector runs on the local Mac, using already-installed tools. It does not install dependencies, start Docker builders, run project build scripts or contact a remote development environment. Unavailable tools are reported as unavailable; missing information never authorizes removal.
+AI Garbage Collector runs on the local Mac, using already-installed tools. It does not install dependencies, run project build scripts or contact a remote development environment. Unavailable tools are reported as unavailable; missing information never authorizes removal.
 
 ## Evidence and commands
 
@@ -14,7 +14,7 @@ AI Garbage Collector runs on the local Mac, using already-installed tools. It do
 - Filesystem identity, native action, reconstruction notes and protection reasons.
 - Input fingerprints for advisory duplicate reports.
 
-`inspect ID` performs a fresh inventory and returns one resource. `status python --owners` and `status docker --builders` expose the deeper metadata. `own ID --owner TASK` records ownership. `require ID --project PROJECT` protects an explicit future requirement. `unrequire` removes that reference. Neither `own` nor `require` authorizes deletion.
+`inspect ID` performs a fresh inventory and returns one resource. `status python --owners` exposes the deeper metadata. `own ID --owner TASK` records ownership. `require ID --project PROJECT` protects an explicit future requirement. `unrequire` removes that reference. Neither `own` nor `require` authorizes deletion.
 
 `manage ID --owner TASK` marks an opt-in resource disposable. Its current references, pins, activity, observation period and other protections still apply. Regular linked Git worktrees no longer need registration. Resource IDs should be copied exactly from status; Python environments discovered through existing project-local inventory can retain a `dependencies:` ID for compatibility.
 
@@ -23,26 +23,6 @@ Regular linked Git worktrees use the latest file or directory modification time,
 Before deletion, regular worktrees check for open PRs in the checkout repository and its fork parent. Named branches use the branch name; detached checkouts use GitHub commit-to-PR associations. A detected open PR protects the worktree. Failed verification is recorded in metadata and the eligibility reason, but permits cleanup by default after the inactivity checks. Set `worktree-require-pr-verification true` to protect on lookup failure. The lookup repeats before removal. PRs targeting unrelated repositories and incomplete commit associations require a pin or `require` entry. Primary, locked, submodule-containing and current-working-directory worktrees remain protected. Codex-managed linked worktrees follow the same age, activity and PR policy as other linked worktrees. Their chats are not archived and no Codex snapshot is created; Codex-specific pins, chat timestamps and permanent-worktree settings are not inspected. Use aigc pins and reservations. Filesystem write times cannot reveal an agent that only reads a tree or plans to return to it, so pins and `aigc run` reservations remain useful. Detached commits have no retained branch and may eventually be pruned by Git after a dirty tree is force-removed without a bundle.
 
 `duplicates` groups matching recorded inputs. Python fingerprints include lockfile, interpreter configuration and installed distribution metadata (including available direct-URL records); build/Node fingerprints cover available lock inputs. Fingerprints do not establish identical mutable contents, selected flags or safe interchangeability. No environments are merged.
-
-## Docker
-
-### Images
-
-Images remain opt-in. The scanner records all tags/digests and references from every existing container, including stopped ones. It also resolves conventional Compose file image names and static Dockerfile `FROM` references in discovered projects. Dynamic Dockerfile arguments or failed Compose resolution make image inventory incomplete and prevent removal.
-
-Only image references are retained from Compose; expanded environment values are not stored. Custom Dockerfile filenames, override combinations, external scripts and projects outside discovery are not a complete future-requirement graph. Keep such images unregistered or add a `require`/pin.
-
-Native image disk usage retains Docker's shared/unique size text. Image creation time is never treated as last use. There is no top-three or popularity protection rule, and no claim of a complete historical image-use counter. Images are removed by immutable ID through non-forced `docker image rm`.
-
-### BuildKit cache
-
-The adapter inventories running local single-node builders with `docker` or `docker-container` drivers. It resolves named-context endpoints and accepts local Unix sockets only. Remote, multi-node, stopped and unsupported builders are skipped with warnings. Aliases resolving to the same local Docker endpoint are deduplicated.
-
-Records include native parents, type, mutable/shared/reclaimable flags, usage counts and last-use output. Some installed Buildx versions return relative age and rounded sizes even in JSON. These remain labelled native text; byte values are upper estimates. No precise timestamp is invented from “two weeks ago.”
-
-Only reclaimable, private, immutable regular records are candidates. Cache mounts, internal/frontend records and shared records remain protected. Each prune uses an anchored exact-ID selector, native age filtering and `--max-used-space`. The installed CLI must support those flags. Docker decides age eligibility again; a planned candidate can therefore produce a no-op. There is no broad builder prune fallback.
-
-A pin on any cache record protects that builder's records. A failed native inventory disables affected cleanup. Docker's VM disk is never truncated or removed, and host free-space changes remain separate from engine-reported reclamation.
 
 ## Python
 
@@ -121,7 +101,7 @@ Broad recognized-process deferral remains for categories other than worktrees. A
 - Tree walks stop at 500,000 entries per resource; union measurement stops at one million. Deep adapters inspect at most 250 discovered projects. Incomplete project discovery disables new reference-dependent cleanup.
 - Each pass attempts at most ten initially eligible resources. Every action gets fresh inventory/policy and identity checks; changed resources are skipped. Full revalidation is intentionally conservative and can take time on large roots.
 - Native maintenance and recollection have a default seven-day cooldown. History separates `removed`, `maintained`, `no_op` and `skipped`, estimated bytes, optional native reclaimed bytes and observed host free-space change.
-- `deep-inventory=false` disables the new discovery layer, including new adapters; it does not enable an older broad Docker pruning fallback.
-- Existing config loads with defaults for new fields. Policy version 6 invalidates old cached reports. Regular worktree eligibility uses filesystem/commit age on the first scan; other filesystem observations still restart when identities change. The executable does not migrate or delete user data.
+- `deep-inventory=false` disables the new discovery layer, including new adapters.
+- Existing config loads with defaults for new fields. Policy version 7 invalidates old cached reports. Regular worktree eligibility uses filesystem/commit age on the first scan; other filesystem observations still restart when identities change. The executable does not migrate or delete user data.
 
-The release does not implement a continuous Docker event listener, exact agent-session attribution, automatic mutable-environment sharing, full dynamic build evaluation or exact APFS extent accounting. Those limitations are visible rather than replaced with guessed ownership or fabricated usage statistics.
+The release does not implement exact agent-session attribution, automatic mutable-environment sharing, full dynamic build evaluation or exact APFS extent accounting. Those limitations are visible rather than replaced with guessed ownership or fabricated usage statistics.
