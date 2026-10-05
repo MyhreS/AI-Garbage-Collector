@@ -11,7 +11,7 @@ pub fn scan(projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<Stri
     {
         let local = project.join(".venv");
         if local.join("pyvenv.cfg").is_file() {
-            let p = fs::canonicalize(&local).unwrap_or(local.clone());
+            let p = crate::platform::normalize(fs::canonicalize(&local).unwrap_or(local.clone()));
             add(&p, Some(project), local.is_symlink(), None, items);
             known.insert(p);
         }

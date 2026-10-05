@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 7;
+pub const POLICY_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {

@@ -1,47 +1,33 @@
 # Builds and releases
 
-## Ordinary builds
+Every workflow is manual. Pushes, tags and pull requests do not start jobs. The shared build workflow can be called by a manually started build or release.
 
-Pushes to `main` and pull requests call the shared **Build macOS binaries** workflow. It checks Rust formatting, lints production code, and builds Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`) executables targeting macOS 13 or newer. It runs no tests or cleanup commands.
+## Build
 
-Each run uploads two archives containing the executable, README, detailed documentation and license. Download them from the run's Artifacts section; build artifacts expire after seven days. The same workflow can be started manually from the Actions tab. No signing secrets or external services are needed.
+Run **Actions → Build → Run workflow**, or `gh workflow run ci.yml`.
+Formatting, production Clippy checks and native release builds run without tests or cleanup commands. Executables are started with `--version` and `--help` only.
 
-## Publish a release
+Assets include README, docs and license:
 
-1. Update `version` in Cargo.toml and run `cargo check` to update Cargo.lock. Commit and push the change.
-2. Create and push a matching version tag:
+- `aigc-aarch64-apple-darwin.tar.gz`: macOS 13+, Apple Silicon
+- `aigc-x86_64-apple-darwin.tar.gz`: macOS 13+, Intel
+- `aigc-x86_64-unknown-linux-gnu.tar.gz`: Ubuntu 22.04+, x86_64
+- `aigc-x86_64-pc-windows-msvc.zip`: Windows 10/11, x86_64
 
-   ```sh
-   git tag v0.5.0
-   git push origin v0.5.0
-   ```
+Build artifacts expire after seven days. Native runners build each platform; Ubuntu uses 22.04 to retain glibc 2.35 compatibility. Neither Apple nor Windows binaries are publisher-signed yet.
 
-3. The **Release** workflow checks that the tag exists and matches the package version, then runs the shared build workflow.
-4. Only after both builds succeed, it publishes both archives and `SHA256SUMS` to GitHub Releases. The terminal installer uses the latest published release.
+## Release
 
-To retry an existing tag, re-run its failed workflow or use **Actions → Release → Run workflow** and enter the tag. Publishing can be repeated: existing release assets are replaced. Use a new version for changed code; do not move a published tag.
+1. Update Cargo.toml and Cargo.lock, build and inspect changes, commit and push.
+2. Create and push the matching version tag. A tag alone starts no job.
+3. Manually start release: `gh workflow run release.yml -f tag=v0.6.0`.
+4. The workflow verifies the tag/version, builds all four binaries, then publishes archives and `SHA256SUMS` to GitHub Releases.
+5. After publication, manually run `gh workflow run homebrew.yml`. It reads the latest release, validates and commits the updated macOS formula to main.
 
-Only the publishing job has repository write permission. Release files persist until the release is removed; temporary build artifacts expire after seven days. Builds use the lockfile. There is no test suite or test-only dependency.
+Use a new version for changed code; never move a published tag. A failed run can be retried manually. Publishing an existing version replaces its assets, so only retry the same source tag.
 
-Release binaries currently have no Developer ID signing or notarization. Checksums verify archive integrity against the release manifest; they do not replace publisher signing.
-
-## Homebrew formula
-
-The repository is also a custom Homebrew tap: `Formula/aigc.rb` selects the published binary and checksum for each Mac architecture. The formula template is `scripts/aigc.rb.in`.
-
-After a successful release, **Update Homebrew formula** reads the latest published release and its checksum manifest, regenerates the formula, checks Ruby syntax, and commits changes to `main`. It uses the repository's built-in token; no separate tap repository or personal token is needed. Reading the latest release prevents an older release rerun from downgrading the formula.
-
-Use **Actions → Update Homebrew formula → Run workflow** to refresh it manually, including after changing the template. If repository rules later block direct pushes to `main`, the update job will fail visibly and the formula update must be merged through the allowed process. The release binaries remain available.
-
-A local update uses:
-
-```sh
-python3 scripts/update-homebrew.py --tag v0.5.0 --checksums /path/to/SHA256SUMS
-ruby -c Formula/aigc.rb
-```
-
-The formula has no test block and the workflow runs no tests. A direct `brew install` does not start the service; the documented Brewfile installs and starts it in one command.
+The terminal installers download the latest release (or `AIGC_VERSION`) and verify the manifest checksum. Only publishing/formula jobs receive write permission. No signing secrets or additional service is needed. Homebrew remains macOS-only; Ubuntu uses the shell installer and Windows uses PowerShell.
 
 ## Local build storage
 
-Reuse `target` while building. At task completion, preserve requested executables outside `target`, then remove owned build/scratch output if no active build needs it. Keep shared Cargo caches available to other projects.
+Reuse `target` while building. Preserve requested executables outside `target`, then remove owned scratch/build output at completion. Keep shared Cargo caches available to other tasks.

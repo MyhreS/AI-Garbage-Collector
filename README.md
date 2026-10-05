@@ -8,11 +8,11 @@ AI Garbage Collector exists to clean up after AI coding agents. Running many age
 
 No cloud environment, subscription, account, or AI model. A release installs as one native executable; users do not need Rust, Python, or Node.
 
-**Version 0.5 automatically removes regular linked Git worktrees after seven days without a file write, HEAD commit or detected use.** On the first scan, old worktrees can qualify immediately. Eligible worktrees with local changes are force-removed, including tracked edits, untracked files and ignored files, with no recovery copy of those files. Read the coverage table before installing.
+**Version 0.6 automatically removes regular linked Git worktrees after seven days without a file write, HEAD commit or detected use.** On the first scan, old worktrees can qualify immediately. Eligible worktrees with local changes are force-removed, including tracked edits, untracked files and ignored files, with no recovery copy of those files. Read the coverage table before installing.
 
 ## Install
 
-Requires macOS 13 or newer. Apple Silicon and Intel binaries are available.
+Supports macOS 13+ (Apple Silicon and Intel), Windows 10/11 x86_64, and Ubuntu 22.04+ x86_64. Git must already be installed. Mobile and package-manager adapters use your existing tools.
 
 ### Homebrew
 
@@ -34,7 +34,7 @@ brew upgrade myhres/aigc/aigc
 brew services restart myhres/aigc/aigc
 ```
 
-The formula uses Homebrew's stable `opt` path, so it does not point at an old version's executable. Each successful GitHub release updates the formula automatically.
+The formula uses Homebrew's stable `opt` path, so it does not point at an old version's executable. After publishing a release, manually run the Homebrew update workflow to refresh the formula.
 
 To uninstall, preserving settings and recovery bundles:
 
@@ -54,9 +54,32 @@ sh /tmp/aigc-install.sh
 rm /tmp/aigc-install.sh
 ```
 
-The installer verifies the release archive's SHA-256 checksum, installs `~/.local/bin/aigc`, and starts an hourly per-user LaunchAgent. It prints the full executable path if `~/.local/bin` is not on your `PATH`. It does not request administrator access or edit your shell startup files.
+The installer verifies the release archive's SHA-256 checksum, installs `~/.local/bin/aigc`, and starts the platform scheduler (LaunchAgent on macOS, systemd user timer on Ubuntu). It prints the full executable path if `~/.local/bin` is not on your `PATH`. It does not request administrator access or edit your shell startup files.
 
-Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.5.0` to select a particular release.
+Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.6.0` to select a particular release.
+
+### Ubuntu terminal install
+
+Install prerequisites once: `sudo apt install git curl lsof`. Then use the same shell installer above from your normal user session. The release targets Ubuntu 22.04+ x86_64 (glibc 2.35+). It installs and starts a systemd **user** timer immediately, then runs hourly and after login. It does not enable system-wide services or lingering; collection while logged out requires you to configure user lingering separately. A user systemd session is required; minimal containers and WSL without systemd are unsupported.
+
+### Windows terminal install (PowerShell)
+
+Install [Git for Windows](https://git-scm.com/download/win) first, then run in your normal logged-in Windows account:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/MyhreS/AI-Garbage-Collector/main/scripts/install.ps1 -OutFile "$env:TEMP\aigc-install.ps1"
+& "$env:TEMP\aigc-install.ps1"
+Remove-Item "$env:TEMP\aigc-install.ps1"
+```
+
+The installer verifies SHA-256, installs `%LOCALAPPDATA%\aigc\bin\aigc.exe`, adds it to your user PATH, and creates an hourly Task Scheduler task with a login trigger. It starts immediately. Open a new terminal for the updated PATH. If your execution policy blocks scripts, review the downloaded file and follow your organization's policy; the installer does not change that policy. Windows binaries are not Authenticode signed. Re-run the installer to update. `aigc service uninstall` removes the scheduled task and keeps your settings.
+
+### Platform activity and storage limits
+
+- **macOS / Ubuntu:** `lsof` and `ps` identify open paths and processes. Missing or failed activity queries prevent deletion. Ubuntu permissions and `/proc` restrictions can reduce visibility; this tool does not inspect other users' private processes or claim universal agent attribution.
+- **Windows:** recognized agents, editors, language runtimes and build processes defer the **whole cleanup pass**. There is no built-in per-file handle scan or exact agent-to-worktree attribution. Unrecognized programs may be missed; use pins or `aigc run` reservations for work you need to preserve. Windows reservations remain after command exit to protect possible background children; release them explicitly with `aigc release-lease ID` after work ends. Windows `run --resource` accepts absolute paths.
+- Windows skips resources containing reparse points (including junctions). Windows size fields report **logical bytes**, despite the shared JSON field names mentioning allocated bytes. Sparse files/compression may make actual recovered space different. macOS/Ubuntu use allocated blocks. All platforms deduplicate hardlinks by filesystem identity.
+- State lives in `~/Library/Application Support/aigc` on macOS, `${XDG_STATE_HOME:-~/.local/state}/aigc` on Ubuntu, and `%LOCALAPPDATA%\aigc` on Windows. The program stays local; there is no remote collector.
 
 ### Build and install from source
 
@@ -123,7 +146,7 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | Recovery bundles created by aigc | Yes | **Always protected; user-managed retention** |
 | Databases, credentials, signing keys, personal files | Not a general-purpose inventory | **Never targeted** |
 
-This version does **not** deduplicate dependencies, share environments between worktrees, delete Git branches, uninstall Xcode, remove arbitrary `build`/`dist` folders, or sweep global IDE caches. It does not manage remote computers, or cloud workspaces. Windows and Linux cleanup are not supported.
+This version does **not** deduplicate dependencies, share environments between worktrees, delete Git branches, uninstall Xcode, remove arbitrary `build`/`dist` folders, or sweep global IDE caches. It does not manage remote computers, or cloud workspaces. Xcode and iOS simulator adapters are macOS-only.
 
 These generated directories are treated as disposable. Pin them if you keep manual changes or irreplaceable files inside them. Removing dependencies or build output means a later install/build may take longer and require internet access. Registered disposable simulator and emulator data is permanently deleted. There is no universal undo for caches or devices.
 
@@ -147,7 +170,7 @@ See [adapter behavior and limitations](docs/ADAPTERS.md) for exact scope, and th
 
 ## Default policy
 
-Both recommended installers start the service immediately. Each hourly run inventories resources and removes those that qualify:
+The terminal installers and Homebrew Brewfile start the service immediately. Each hourly run inventories resources and removes those that qualify:
 
 | Setting | Default |
 | --- | --- |

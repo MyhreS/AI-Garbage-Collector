@@ -51,7 +51,8 @@ pub fn command_at(
     cwd: Option<&Path>,
     timeout: u64,
 ) -> Result<String> {
-    let mut c = Command::new(program);
+    let resolved = crate::platform::executable(program);
+    let mut c = Command::new(resolved);
     c.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -93,8 +94,8 @@ pub fn git(path: &Path, args: &[&str]) -> Result<String> {
     command_at("git", args, Some(path), 30)
 }
 pub fn canonical(p: &Path) -> Result<PathBuf> {
-    let c = fs::canonicalize(p)?;
-    if p != c {
+    let c = crate::platform::normalize(fs::canonicalize(p)?);
+    if crate::platform::normalize(p.to_path_buf()) != c {
         bail!(
             "path must be canonical and must not traverse symlinks: {}",
             p.display()

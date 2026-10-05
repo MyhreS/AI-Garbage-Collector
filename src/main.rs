@@ -8,7 +8,7 @@ use aigc::{
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use serde::Serialize;
-use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 #[derive(Parser)]
 #[command(
@@ -88,7 +88,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Run one scheduled cleanup pass (used by launchd).
+    /// Run one scheduled cleanup pass (used by the platform scheduler).
     Collect,
     /// Read or change configuration. Changes also affect scheduled collection.
     Config {
@@ -125,7 +125,7 @@ enum Commands {
         #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
-    /// Install, remove or inspect the hourly per-user macOS service.
+    /// Install, remove or inspect the hourly per-user background service.
     Service {
         #[command(subcommand)]
         action: ServiceAction,
@@ -316,13 +316,14 @@ fn main() {
 }
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    #[cfg(unix)]
     ensure!(
         unsafe { libc::getuid() } != 0,
         "run aigc as your normal user, never with sudo"
     );
     let dir = config::state_dir();
     fs::create_dir_all(&dir)?;
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+    aigc::platform::private_dir(&dir)?;
     if let Commands::Run {
         command,
         resources,
@@ -429,7 +430,7 @@ fn run() -> Result<()> {
                 (1..=3650).contains(&retain_days),
                 "retention must be 1..3650 days"
             );
-            let path = fs::canonicalize(path)?;
+            let path = aigc::platform::normalize(fs::canonicalize(path)?);
             aigc::adapters::disposable_path(&path, &kind)?;
             c.registered.retain(|r| r.path != path);
             c.registered.push(config::Registration {
@@ -443,7 +444,7 @@ fn run() -> Result<()> {
             output(&c.registered)
         }
         Commands::Unregister { path } => {
-            let path = fs::canonicalize(&path).unwrap_or(path);
+            let path = aigc::platform::normalize(fs::canonicalize(&path).unwrap_or(path));
             c.registered.retain(|r| r.path != path);
             c.save(&dir)?;
             output(&c.registered)
@@ -523,8 +524,10 @@ fn run() -> Result<()> {
             output(&serde_json::json!({"unmanaged":id}))
         }
         Commands::Pin { target } => {
-            let target = if target.starts_with('/') {
-                fs::canonicalize(&target)?.to_string_lossy().into_owned()
+            let target = if std::path::Path::new(&target).is_absolute() {
+                aigc::platform::normalize(fs::canonicalize(&target)?)
+                    .to_string_lossy()
+                    .into_owned()
             } else {
                 target
             };
@@ -563,7 +566,7 @@ fn run() -> Result<()> {
             ServiceAction::Status => output(&service::status()),
         },
         Commands::Doctor => output(
-            &serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"state_directory":dir,"configuration_valid":true,"service":service::status(),"backups":dir.join("backups"),"scope":"local macOS, current user"}),
+            &serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"state_directory":dir,"configuration_valid":true,"service":service::status(),"backups":dir.join("backups"),"scope":"local machine, current user"}),
         ),
         Commands::Run { .. } => unreachable!(),
     }

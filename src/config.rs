@@ -102,7 +102,7 @@ impl Config {
             }
         }
         for p in &self.roots {
-            if !p.is_absolute() || p == Path::new("/") || p == &home() {
+            if !p.is_absolute() || p.parent().is_none() || p == &home() {
                 bail!("roots must be absolute project directories, not / or your entire home");
             }
         }
@@ -138,14 +138,14 @@ impl Config {
     }
 }
 pub fn home() -> PathBuf {
-    std::env::var_os("HOME")
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
         .expect("HOME must be set")
 }
 pub fn state_dir() -> PathBuf {
     std::env::var_os("AIGC_STATE_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| home().join("Library/Application Support/aigc"))
+        .unwrap_or_else(crate::platform::state_dir)
 }
 pub fn atomic_json(path: &Path, data: &impl Serialize) -> Result<()> {
     let parent = path.parent().context("missing parent")?;

@@ -1,4 +1,4 @@
-name: Build macOS binaries
+name: Build platform binaries
 on:
   workflow_call:
     inputs:
@@ -40,11 +40,15 @@ jobs:
   binaries:
     name: ${{ matrix.target }}
     needs: check
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        include:
+          - {os: macos-latest, target: aarch64-apple-darwin, binary: aigc}
+          - {os: macos-15-intel, target: x86_64-apple-darwin, binary: aigc}
+          - {os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, binary: aigc}
+          - {os: windows-latest, target: x86_64-pc-windows-msvc, binary: aigc.exe}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,18 +56,31 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+          components: clippy
+      - run: cargo clippy --locked --lib --bin aigc -- -D warnings
       - run: cargo build --release --locked --bin aigc --target ${{ matrix.target }}
+      - name: Verify executable startup
+        shell: bash
+        run: |
+          "target/${{ matrix.target }}/release/${{ matrix.binary }}" --version
+          "target/${{ matrix.target }}/release/${{ matrix.binary }}" --help
       - name: Package binary and documentation
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
+          BINARY: ${{ matrix.binary }}
         run: |
           mkdir -p package
-          cp "target/$TARGET/release/aigc" README.md LICENSE package/
+          cp "target/$TARGET/release/$BINARY" README.md LICENSE package/
           cp -R docs package/docs
-          tar -czf "aigc-$TARGET.tar.gz" -C package aigc README.md LICENSE docs
+          if [ "$BINARY" = aigc.exe ]; then
+            powershell.exe -NoProfile -Command "Compress-Archive -Path package/* -DestinationPath aigc-$TARGET.zip"
+          else
+            tar -czf "aigc-$TARGET.tar.gz" -C package aigc README.md LICENSE docs
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: aigc-${{ matrix.target }}
-          path: aigc-${{ matrix.target }}.tar.gz
+          path: aigc-${{ matrix.target }}.*
           if-no-files-found: error
           retention-days: 7

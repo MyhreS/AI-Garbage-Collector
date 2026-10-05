@@ -1,13 +1,11 @@
 name: Build
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  macos:
+  platforms:
     uses: ./.github/workflows/build.yml

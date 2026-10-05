@@ -9,7 +9,6 @@ use serde_json::Value;
 use std::{
     collections::{BTreeSet, HashSet},
     fs,
-    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
@@ -96,10 +95,11 @@ impl Activity {
         path.is_some_and(|p| self.open_paths.iter().any(|open| open.starts_with(p)))
     }
 }
+#[cfg(unix)]
 pub fn activity(state_dir: &Path) -> Activity {
     let uid = unsafe { libc::getuid() }.to_string();
-    let files = command("/usr/sbin/lsof", &["-nP", "-a", "-u", &uid, "-Fpcfn"]);
-    let procs = command("/bin/ps", &["-axo", "comm="]);
+    let files = command("lsof", &["-nP", "-a", "-u", &uid, "-Fpcfn"]);
+    let procs = crate::platform::process_names();
     let mut a = Activity {
         reliable: files.is_ok() && procs.is_ok(),
         ..Default::default()
@@ -157,7 +157,7 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
     let Ok(root) = fs::symlink_metadata(path) else {
         return (0, 0, 0, false);
     };
-    if root.file_type().is_symlink() {
+    if crate::platform::is_link(&root) {
         return (0, 0, 0, false);
     }
     let mut bytes = 0u64;
@@ -174,16 +174,24 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
             complete = false;
             break;
         }
-        match e.and_then(|e| e.metadata()) {
-            Ok(m) => {
-                if m.dev() != root.dev() {
+        match e {
+            Ok(e) => {
+                let Ok(m) = e.metadata() else {
+                    complete = false;
+                    continue;
+                };
+                if cfg!(windows) && crate::platform::is_link(&m) {
                     complete = false;
                     continue;
                 }
-                if inodes.insert((m.dev(), m.ino())) {
-                    bytes = bytes.saturating_add(m.blocks() * 512);
+                let Ok(id) = crate::platform::file_id(e.path(), &m) else {
+                    complete = false;
+                    continue;
+                };
+                if inodes.insert(id) {
+                    bytes = bytes.saturating_add(crate::platform::bytes(&m));
                 }
-                modified = modified.max(m.mtime().max(0) as u64);
+                modified = modified.max(crate::platform::modified(&m));
             }
             Err(_) => complete = false,
         }
@@ -238,7 +246,9 @@ pub fn scan(c: &Config) -> (Vec<Item>, Vec<String>) {
         }
     }
     let projects = discover_projects(c, &mut items, &mut warnings);
-    scan_simulators(&mut items, &mut warnings);
+    if cfg!(target_os = "macos") {
+        scan_simulators(&mut items, &mut warnings);
+    }
     scan_android(&mut items, &mut warnings);
     if c.deep_inventory {
         crate::adapters::scan(c, &projects, &mut items, &mut warnings);
@@ -555,7 +565,7 @@ fn scan_android(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
     let root = std::env::var_os("ANDROID_AVD_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".android/avd"));
-    let ps = command("/bin/ps", &["-axo", "comm="]);
+    let ps = crate::platform::process_names();
     let running = ps
         .as_ref()
         .map(|s| {
@@ -611,11 +621,37 @@ pub fn report(c: &Config, dir: &Path) -> Result<(Report, Activity)> {
             disk_free_bytes: free,
             min_free_bytes: c.min_free_bytes,
             last_collection: None,
-            service_installed: crate::service::plist_path().exists(),
+            service_installed: crate::service::installed(),
             warnings,
             items,
             storage,
         },
         a,
     ))
+}
+
+#[cfg(windows)]
+pub fn activity(state_dir: &Path) -> Activity {
+    let names = crate::platform::process_names();
+    let mut a = Activity {
+        reliable: names.is_ok(),
+        ..Default::default()
+    };
+    if let Ok(names) = names {
+        // Windows has no lsof equivalent built in. Without per-directory attribution,
+        // any recognized developer process reserves the entire cleanup pass.
+        a.busy = names.lines().any(|n| {
+            let n = n.trim().to_ascii_lowercase();
+            [
+                "codex", "claude", "aider", "opencode", "rustc", "cargo", "clang", "cl", "msbuild",
+                "devenv", "cmake", "ninja", "gradle", "java", "node", "python", "pip", "uv",
+                "poetry", "bun", "emulator", "qemu", "studio", "code",
+            ]
+            .iter()
+            .any(|p| n == *p || n.starts_with(&format!("{p}-")))
+        });
+        a.global_reserved = a.busy;
+    }
+    crate::leases::apply(state_dir, &mut a);
+    a
 }

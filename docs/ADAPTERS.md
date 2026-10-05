@@ -1,6 +1,6 @@
 # Adapter behavior in v0.5
 
-AI Garbage Collector runs on the local Mac, using already-installed tools. It does not install dependencies, run project build scripts or contact a remote development environment. Unavailable tools are reported as unavailable; missing information never authorizes removal.
+AI Garbage Collector runs on the local computer, using already-installed tools. It does not install dependencies, run project build scripts or contact a remote development environment. Unavailable tools are reported as unavailable; missing information never authorizes removal.
 
 ## Evidence and commands
 
@@ -105,3 +105,7 @@ Broad recognized-process deferral remains for categories other than worktrees. A
 - Existing config loads with defaults for new fields. Policy version 7 invalidates old cached reports. Regular worktree eligibility uses filesystem/commit age on the first scan; other filesystem observations still restart when identities change. The executable does not migrate or delete user data.
 
 The release does not implement exact agent-session attribution, automatic mutable-environment sharing, full dynamic build evaluation or exact APFS extent accounting. Those limitations are visible rather than replaced with guessed ownership or fabricated usage statistics.
+
+## Platform boundaries
+
+See the README platform section for Windows activity limitations and persistent reservations. Xcode and iOS tools are macOS-only. Android uses ANDROID_HOME/ANDROID_SDK_ROOT or the platform default SDK path; Windows command-line tools use .bat launchers. Windows junctions/reparse points prevent removal, and sizes are logical bytes. Ubuntu needs lsof, ps and a systemd user session for scheduled collection.

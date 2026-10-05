@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashSet},
-    fs,
-    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
@@ -159,8 +157,8 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
             i.evidence.owners.push(owner.clone());
         }
         if let Some(p) = &i.path {
-            if let Ok(m) = fs::symlink_metadata(p) {
-                i.evidence.identity = Some(format!("{}:{}", m.dev(), m.ino()));
+            if let Ok(identity) = crate::platform::identity(p) {
+                i.evidence.identity = Some(identity);
             }
             for (id, parent) in &paths {
                 if p != parent && p.starts_with(parent) {
@@ -175,7 +173,7 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
                             | "build project"
                             | "JavaScript project"
                             | "Xcode DerivedData metadata"
-                    ) && r.id.starts_with('/')
+                    ) && Path::new(&r.id).is_absolute()
                         && process
                             .cwd
                             .as_ref()
@@ -194,7 +192,8 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
         if a.reserved.iter().any(|id| {
             id == &i.id
                 || i.path.as_ref().is_some_and(|p| {
-                    id.starts_with('/') && (p.starts_with(id) || Path::new(id).starts_with(p))
+                    Path::new(id).is_absolute()
+                        && (p.starts_with(id) || Path::new(id).starts_with(p))
                 })
         }) {
             i.active = true;
@@ -230,7 +229,7 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
         .iter()
         .filter(|p| !roots.iter().any(|q| q != *p && p.starts_with(q)))
         .collect();
-    let mut summary = StorageSummary { complete: items.iter().filter(|i| i.path.is_some()).all(|i| i.complete), note: "Filesystem union counts hardlinks once and excludes nested duplicate totals. APFS clone/snapshot sharing are not exact reclaimable bytes.".into(), ..Default::default() };
+    let mut summary = StorageSummary { complete: items.iter().filter(|i| i.path.is_some()).all(|i| i.complete), note: "Filesystem union counts hardlinks once and excludes nested duplicate totals. Clone/snapshot sharing is not exact reclaimable space. Windows sizes are logical bytes, not allocated bytes.".into(), ..Default::default() };
     let mut seen = HashSet::new();
     'roots: for p in roots {
         for entry in WalkDir::new(p).follow_links(false).same_file_system(true) {
@@ -239,13 +238,27 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
                 summary.complete = false;
                 break 'roots;
             }
-            match entry.and_then(|e| e.metadata()) {
-                Ok(m) if seen.insert((m.dev(), m.ino())) => {
+            match entry {
+                Ok(e) => {
+                    let Ok(m) = e.metadata() else {
+                        summary.complete = false;
+                        continue;
+                    };
+                    if cfg!(windows) && crate::platform::is_link(&m) {
+                        summary.complete = false;
+                        continue;
+                    }
+                    let Ok(id) = crate::platform::file_id(e.path(), &m) else {
+                        summary.complete = false;
+                        continue;
+                    };
+                    if !seen.insert(id) {
+                        continue;
+                    }
                     summary.filesystem_allocated_union_bytes = summary
                         .filesystem_allocated_union_bytes
-                        .saturating_add(m.blocks().saturating_mul(512))
+                        .saturating_add(crate::platform::bytes(&m))
                 }
-                Ok(_) => {}
                 Err(_) => summary.complete = false,
             }
         }

@@ -16,8 +16,13 @@ pub mod mobile;
 pub mod python;
 
 pub fn available(program: &str) -> bool {
-    std::env::var_os("PATH")
-        .is_some_and(|paths| std::env::split_paths(&paths).any(|p| p.join(program).is_file()))
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|p| {
+            ["", ".exe", ".cmd", ".bat"].iter().any(|ext| {
+                (ext.is_empty() || cfg!(windows)) && p.join(format!("{program}{ext}")).is_file()
+            })
+        })
+    })
 }
 pub fn read(path: &Path) -> Result<String> {
     ensure!(

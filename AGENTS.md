@@ -1,6 +1,6 @@
 # AI Garbage Collector
 
-Read README.md before changing cleanup behavior. This is a standalone local macOS tool; there is no cloud service.
+Read README.md before changing cleanup behavior. This is a standalone local macOS, Windows and Ubuntu tool; there is no cloud service.
 
 - Treat uncertain ownership or activity as protected, never as permission to delete.
 - Use native Git and device-management commands for their resources.

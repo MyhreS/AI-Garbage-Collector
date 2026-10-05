@@ -58,8 +58,8 @@ pub fn prepare(c: &Config, dir: &Path) -> Result<Report> {
 }
 pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
     ensure!(
-        cfg!(target_os = "macos"),
-        "automatic cleanup is supported only on macOS"
+        cfg!(any(target_os = "macos", target_os = "linux", windows)),
+        "automatic cleanup requires macOS, Linux or Windows"
     );
     let mut results = vec![];
     let mut removed = 0u64;
@@ -74,7 +74,8 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
         let reserved = activity.reserved.iter().any(|id| {
             id == &item.id
                 || item.path.as_ref().is_some_and(|p| {
-                    id.starts_with('/') && (p.starts_with(id) || Path::new(id).starts_with(p))
+                    Path::new(id).is_absolute()
+                        && (p.starts_with(id) || Path::new(id).starts_with(p))
                 })
         });
         let precheck = if !activity.reliable
@@ -176,10 +177,11 @@ fn verify_path(item: &Item) -> Result<PathBuf> {
     );
     let (size, modified, entries, complete) = inventory::tree_stats(&p);
     ensure!(
-        item.evidence.identity.as_ref().is_none_or(|id| {
-            use std::os::unix::fs::MetadataExt;
-            fs::symlink_metadata(&p).is_ok_and(|m| *id == format!("{}:{}", m.dev(), m.ino()))
-        }) && complete
+        item.evidence
+            .identity
+            .as_ref()
+            .is_none_or(|id| { crate::platform::identity(&p).is_ok_and(|current| *id == current) })
+            && complete
             && size == item.bytes
             && modified == item.modified
             && entries == item.entries,
@@ -279,7 +281,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                         && !activity.touches(Some(&p))
                         && !activity.reserved.iter().any(|id| {
                             id == &item.id
-                                || (id.starts_with('/')
+                                || (Path::new(id).is_absolute()
                                     && (p.starts_with(id) || Path::new(id).starts_with(&p)))
                         }),
                     "worktree became active or reserved"
@@ -401,7 +403,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                         .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)),
                 "unsupported AVD name"
             );
-            let ps = command("/bin/ps", &["-axo", "comm="])?;
+            let ps = crate::platform::process_names()?;
             ensure!(
                 !ps.contains("qemu-system") && !ps.lines().any(|s| s.ends_with("/emulator")),
                 "an emulator is running"
@@ -416,7 +418,11 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 "AVD metadata points to another path"
             );
             let sdk = crate::adapters::mobile::sdk_root();
-            let tool = sdk.join("cmdline-tools/latest/bin/avdmanager");
+            let tool = sdk.join(if cfg!(windows) {
+                "cmdline-tools/latest/bin/avdmanager.bat"
+            } else {
+                "cmdline-tools/latest/bin/avdmanager"
+            });
             ensure!(
                 tool.is_file(),
                 "avdmanager unavailable at {}; delete this AVD manually or install command-line tools",

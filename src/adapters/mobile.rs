@@ -5,30 +5,40 @@ pub fn sdk_root() -> PathBuf {
     std::env::var_os("ANDROID_HOME")
         .or_else(|| std::env::var_os("ANDROID_SDK_ROOT"))
         .map(PathBuf::from)
-        .unwrap_or_else(|| home().join("Library/Android/sdk"))
+        .unwrap_or_else(crate::platform::android_sdk)
 }
 fn sdk_tool(root: &Path) -> Result<PathBuf> {
-    let latest = root.join("cmdline-tools/latest/bin/sdkmanager");
+    let latest = root.join(if cfg!(windows) {
+        "cmdline-tools/latest/bin/sdkmanager.bat"
+    } else {
+        "cmdline-tools/latest/bin/sdkmanager"
+    });
     if latest.is_file() {
         return Ok(latest);
     }
     let mut candidates: Vec<_> = children(&root.join("cmdline-tools"))
         .into_iter()
-        .map(|p| p.join("bin/sdkmanager"))
+        .map(|p| {
+            p.join(if cfg!(windows) {
+                "bin/sdkmanager.bat"
+            } else {
+                "bin/sdkmanager"
+            })
+        })
         .filter(|p| p.is_file())
         .collect();
     candidates.sort();
     candidates.pop().context("SDK manager missing")
 }
 pub fn scan(c: &Config, projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<String>) {
-    if runtimes(items).is_err() {
+    if cfg!(target_os = "macos") && runtimes(items).is_err() {
         warnings
             .push("Simulator runtime relationships unavailable; runtime cleanup disabled".into());
         for i in items.iter_mut().filter(|i| i.kind == "runtimes") {
             i.complete = false;
         }
     }
-    if sdk(projects, items).is_err() {
+    if sdk_root().exists() && sdk(projects, items).is_err() {
         warnings.push(
             "Android SDK package/project relationships incomplete; SDK cleanup disabled".into(),
         );

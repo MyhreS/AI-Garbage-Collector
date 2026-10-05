@@ -1,11 +1,9 @@
 name: Release
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag, for example v0.5.0
+        description: Existing version tag, for example v0.6.0
         required: true
         type: string
 permissions:
@@ -33,7 +31,9 @@ jobs:
         run: |
           [ -s aigc-aarch64-apple-darwin.tar.gz ]
           [ -s aigc-x86_64-apple-darwin.tar.gz ]
-          sha256sum aigc-*.tar.gz > SHA256SUMS
+          [ -s aigc-x86_64-unknown-linux-gnu.tar.gz ]
+          [ -s aigc-x86_64-pc-windows-msvc.zip ]
+          sha256sum aigc-*.tar.gz aigc-*.zip > SHA256SUMS
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -41,7 +41,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" aigc-*.tar.gz SHA256SUMS --clobber
+            gh release upload "$RELEASE_TAG" aigc-*.tar.gz aigc-*.zip SHA256SUMS --clobber
           else
-            gh release create "$RELEASE_TAG" aigc-*.tar.gz SHA256SUMS --verify-tag --generate-notes --title "AI Garbage Collector $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" aigc-*.tar.gz aigc-*.zip SHA256SUMS --verify-tag --generate-notes --title "AI Garbage Collector $RELEASE_TAG"
           fi

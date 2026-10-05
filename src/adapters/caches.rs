@@ -112,7 +112,7 @@ pub fn scan(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
         (
             "yarn",
             vec![
-                home().join("Library/Caches/Yarn"),
+                crate::platform::cache_dir("Yarn"),
                 home().join(".yarn/berry/cache"),
             ],
         ),
@@ -130,7 +130,7 @@ pub fn scan(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
                 std::env::var_os("PLAYWRIGHT_BROWSERS_PATH")
                     .filter(|v| v != "0")
                     .map(PathBuf::from)
-                    .unwrap_or_else(|| home().join("Library/Caches/ms-playwright")),
+                    .unwrap_or_else(|| crate::platform::cache_dir("ms-playwright")),
             ],
         ),
     ] {
