@@ -227,7 +227,11 @@ pub fn remove(i: &Item, c: &Config) -> Result<String> {
                         == environment.to_string_lossy()),
                 "Poetry association changed"
             );
-            let executable = environment.join("bin/python");
+            let executable = environment.join(if cfg!(windows) {
+                "Scripts/python.exe"
+            } else {
+                "bin/python"
+            });
             let name = executable.to_str().context("invalid environment path")?;
             tool(
                 "poetry",

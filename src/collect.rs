@@ -405,7 +405,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             );
             let ps = crate::platform::process_names()?;
             ensure!(
-                !ps.contains("qemu-system") && !ps.lines().any(|s| s.ends_with("/emulator")),
+                !crate::platform::emulator_running(&ps),
                 "an emulator is running"
             );
             let ini = fs::read_to_string(p.with_extension("ini"))?;

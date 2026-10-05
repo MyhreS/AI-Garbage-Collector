@@ -575,10 +575,7 @@ fn scan_android(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
     let ps = crate::platform::process_names();
     let running = ps
         .as_ref()
-        .map(|s| {
-            s.lines()
-                .any(|l| l.contains("qemu-system") || l.ends_with("/emulator"))
-        })
+        .map(|s| crate::platform::emulator_running(s))
         .unwrap_or(true);
     for p in children(&root) {
         if p.extension().is_none_or(|s| s != "avd") {

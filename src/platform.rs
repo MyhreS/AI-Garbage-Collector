@@ -173,3 +173,11 @@ pub fn volume(id: file_id::FileId) -> u64 {
         } => volume_serial_number,
     }
 }
+
+pub fn emulator_running(names: &str) -> bool {
+    names.lines().any(|line| {
+        let normalized = line.trim().replace('\\', "/").to_ascii_lowercase();
+        let name = normalized.rsplit('/').next().unwrap_or("");
+        name.contains("qemu-system") || name == "emulator" || name == "emulator.exe"
+    })
+}

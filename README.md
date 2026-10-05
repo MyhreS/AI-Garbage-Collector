@@ -1,6 +1,6 @@
 # AI Garbage Collector
 
-**Keep the Mac you already own usable when coding agents fill its disk.**
+**Keep the computer you already own usable when coding agents fill its disk.**
 
 AI Garbage Collector exists to clean up after AI coding agents. Running many agents in parallel can leave behind abandoned worktrees, duplicated dependencies, build output and virtual devices. The goal is to keep limited local storage usable by identifying those leftovers and collecting what is safe to remove.
 

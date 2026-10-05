@@ -151,7 +151,11 @@ fn fingerprint(project: &Path, environment: &Path) -> Option<String> {
         .find_map(|name| read(&project.join(name)).ok())?;
     let cfg = read(&environment.join("pyvenv.cfg")).ok()?;
     let mut records = Vec::new();
-    let libs = children(&environment.join("lib"));
+    let libs = if cfg!(windows) {
+        vec![environment.join("Lib")]
+    } else {
+        children(&environment.join("lib"))
+    };
     for lib in libs {
         for info in children(&lib.join("site-packages")) {
             if info.extension().is_some_and(|s| s == "dist-info") {
