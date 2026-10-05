@@ -32,9 +32,8 @@ pub fn install() -> Result<()> {
     fs::write(
         directory().join("aigc.service"),
         format!(
-            "[Unit]\nDescription=AI Garbage Collector\n[Service]\nType=oneshot\nExecStart=:{} collect\nWorkingDirectory={}\nEnvironment={}\nEnvironment={}\nNice=10\n",
+            "[Unit]\nDescription=AI Garbage Collector\n[Service]\nType=oneshot\nExecStart=:{} collect\nWorkingDirectory=%h\nEnvironment={}\nEnvironment={}\nNice=10\n",
             quote(&exe.to_string_lossy()),
-            quote(&home().to_string_lossy()),
             quote(&format!("PATH={path}")),
             quote(&format!(
                 "XDG_STATE_HOME={}",
@@ -61,7 +60,11 @@ pub fn uninstall() -> Result<()> {
         "service removal does not support AIGC_STATE_DIR"
     );
     command("systemctl", &["--user", "disable", "--now", "aigc.timer"])?;
-    command("systemctl", &["--user", "stop", "aigc.service"])?;
+    let _ = command("systemctl", &["--user", "stop", "aigc.service"]);
+    ensure!(
+        command("systemctl", &["--user", "is-active", "aigc.service"]).is_err(),
+        "service is still active"
+    );
     for name in ["aigc.timer", "aigc.service"] {
         let p = directory().join(name);
         if p.exists() {
