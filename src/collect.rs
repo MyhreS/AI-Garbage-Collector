@@ -189,7 +189,7 @@ fn verify_path(item: &Item) -> Result<PathBuf> {
 }
 fn verify_worktree_ref(item: &Item, path: &Path) -> Result<()> {
     let head = git(path, &["rev-parse", "HEAD"])?;
-    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
+    let branch = git(path, &["rev-parse", "--symbolic-full-name", "HEAD"])?;
     ensure!(
         item.evidence.metadata["head_oid"].as_str() == Some(head.trim())
             && item.evidence.metadata["branch"].as_str() == Some(branch.trim()),
@@ -261,7 +261,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 !dirty || c.worktree_force,
                 "worktree has local files and force removal is disabled"
             );
-            crate::github::ensure_no_open_pr(&p)?;
+            crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
             ensure!(
                 !p.components().any(|p| matches!(
                     p.as_os_str().to_str(),
@@ -296,14 +296,14 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                     inventory::worktree_removable(&p)?,
                     "worktree status changed before force removal"
                 );
-                crate::github::ensure_no_open_pr(&p)?;
+                crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
                 verify_worktree_ref(item, &p)?;
                 git(
                     &p,
                     &["worktree", "remove", "--force", "--", p.to_str().unwrap()],
                 )?;
                 return Ok(
-                    "Force-removed idle worktree and discarded tracked edits, untracked and ignored files; branch retained, no recovery archive"
+                    "Force-removed idle worktree and discarded tracked edits, untracked and ignored files; named branch retained if present; detached commits have no recovery archive"
                         .into(),
                 );
             }
@@ -337,7 +337,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             let result = (|| -> Result<()> {
                 git(&p, &["bundle", "create", bundle_str, "HEAD"])?;
                 git(&p, &["bundle", "verify", bundle_str])?;
-                crate::github::ensure_no_open_pr(&p)?;
+                crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
                 ensure!(
                     existing.saturating_add(fs::metadata(&bundle)?.len()) <= c.backup_budget_bytes,
                     "recovery bundle exceeds storage budget"

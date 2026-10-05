@@ -56,7 +56,7 @@ rm /tmp/aigc-install.sh
 
 The installer verifies the release archive's SHA-256 checksum, installs `~/.local/bin/aigc`, and starts an hourly per-user LaunchAgent. It prints the full executable path if `~/.local/bin` is not on your `PATH`. It does not request administrator access or edit your shell startup files.
 
-Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.4.0` to select a particular release.
+Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.4.1` to select a particular release.
 
 ### Build and install from source
 
@@ -194,6 +194,7 @@ aigc config set max-delete-per-run 20GB
 aigc config set docker-cache-cleanup false
 aigc config set worktree-cleanup false
 aigc config set worktree-force false
+aigc config set worktree-require-pr-verification true
 aigc config set budget.package-cache 5GB
 aigc config set maintenance-cooldown-days 7
 aigc config set deep-inventory true
@@ -240,7 +241,9 @@ aigc unmanage 'emulators:throwaway-pixel'
 
 Registration authorizes disposal after policy checks for images and devices. Regular linked worktrees need no registration. They still honor pins, activity checks, open-PR checks and app-managed worktree protection. For devices/images, register only data you are willing to lose. Inventory still works without registration.
 
-For an eligible regular Git worktree, `aigc` uses an authenticated [GitHub CLI](https://cli.github.com/manual/) to check open PRs with the same branch in the checkout's repository and, for a fork, its parent. An open PR protects the worktree. If `gh` is missing, unauthenticated, or the lookup fails, the worktree stays protected. The check runs during inventory and again before Git removes the worktree. Keep your checkout's GitHub remote and authentication available; PRs targeting unrelated repositories are outside this lookup.
+For an eligible regular Git worktree, `aigc` uses [GitHub CLI](https://cli.github.com/manual/) to check open PRs in the checkout repository and its fork parent. Named branches use their branch name; detached checkouts use PRs associated with the HEAD commit. A detected open PR protects the worktree. **By default, a missing GitHub CLI, failed authentication or failed lookup does not block an otherwise eligible seven-day-old worktree.** The report labels unavailable verification. Set `worktree-require-pr-verification true` to retain worktrees whenever this check fails. Checks run during inventory and before removal. Commit associations and repository discovery cannot identify every related PR, especially PRs targeting unrelated repositories; pin those worktrees.
+
+Codex-managed trees stay protected in aigc. Use Codex’s worktree cleanup settings to lower its retained-worktree limit, or archive completed chats. Codex saves a recovery snapshot and protects pinned, running and permanent worktrees; see [OpenAI’s worktree documentation](https://learn.chatgpt.com/docs/environments/git-worktrees). aigc does not rewrite Codex’s private state or directly remove its managed folders.
 
 ## Use it from an agent
 
@@ -285,7 +288,7 @@ For a **clean** regular worktree, aigc creates and verifies a bundle of its HEAD
 git clone '/path/from/history/to/backup.bundle' restored-worktree
 ```
 
-For a **dirty** regular worktree, aigc uses `git worktree remove --force`. It does **not** make a bundle or another recovery copy. Tracked edits, untracked files, ignored files, local configuration and generated content inside it are permanently discarded. Its Git branch and committed history remain in the original repository. Pin a tree, use a reservation, or set `worktree-force false` to keep local files.
+For a **dirty** regular worktree, aigc uses `git worktree remove --force`. It does **not** make a bundle or another recovery copy. Tracked edits, untracked files, ignored files, local configuration and generated content inside it are permanently discarded. A named Git branch and its committed history remain in the original repository. A detached checkout has no branch keeping its commits reachable; after force removal, Git may eventually discard those commits too. Pin a tree, use a reservation, or set `worktree-force false` to keep local files.
 
 Clean-tree bundles consume disk space and should be reviewed when no longer needed. Creation checks a 2 GiB default backup budget and available space; failed new bundles are removed. They do not back up other linked worktrees or external files. If clean-tree backup creation or verification fails, removal does not proceed.
 

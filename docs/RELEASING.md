@@ -12,8 +12,8 @@ Each run uploads two archives containing the executable, README, detailed docume
 2. Create and push a matching version tag:
 
    ```sh
-   git tag v0.4.0
-   git push origin v0.4.0
+   git tag v0.4.1
+   git push origin v0.4.1
    ```
 
 3. The **Release** workflow checks that the tag exists and matches the package version, then runs the shared build workflow.
@@ -36,7 +36,7 @@ Use **Actions → Update Homebrew formula → Run workflow** to refresh it manua
 A local update uses:
 
 ```sh
-python3 scripts/update-homebrew.py --tag v0.4.0 --checksums /path/to/SHA256SUMS
+python3 scripts/update-homebrew.py --tag v0.4.1 --checksums /path/to/SHA256SUMS
 ruby -c Formula/aigc.rb
 ```
 

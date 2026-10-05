@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 4;
+pub const POLICY_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -120,7 +120,7 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             .maintenance
             .get(&i.id)
             .is_some_and(|last| time.saturating_sub(*last) < c.maintenance_cooldown_days * 86400);
-        let (status, reason) = if c.paused_until > time {
+        let (status, mut reason) = if c.paused_until > time {
             (Status::Protected, "collection is paused".into())
         } else if c.pins.iter().any(|p| {
             p == &i.id
@@ -238,6 +238,12 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                 },
             )
         };
+        if worktree
+            && status == Status::Eligible
+            && i.evidence.metadata["pr_verification"] == "unavailable"
+        {
+            reason.push_str("; PR verification unavailable, allowed by configuration");
+        }
         if status != Status::Eligible && !i.evidence.blockers.contains(&reason) {
             i.evidence.blockers.push(reason.clone());
         }

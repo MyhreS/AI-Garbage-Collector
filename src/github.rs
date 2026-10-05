@@ -4,12 +4,13 @@ use serde_json::Value;
 use std::path::Path;
 
 /// Check the worktree branch against open PRs in its GitHub repository and its
-/// parent repository when the checkout is a fork. An unavailable or ambiguous
-/// check is an error so callers keep the worktree.
+/// parent repository when the checkout is a fork. Detached checkouts use commit
+/// associations. Errors remain distinct from a verified absence of open PRs.
 pub fn open_pr(path: &Path) -> Result<Option<String>> {
-    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
-    let branch = branch.trim();
-    ensure!(!branch.is_empty(), "worktree branch is unknown");
+    let reference = git(path, &["rev-parse", "--symbolic-full-name", "HEAD"])?;
+    let branch = reference.trim().strip_prefix("refs/heads/");
+    let head = git(path, &["rev-parse", "--verify", "HEAD"])?;
+    ensure!(!head.trim().is_empty(), "worktree HEAD is unknown");
 
     let repo: Value = serde_json::from_str(&command_at(
         "gh",
@@ -28,32 +29,63 @@ pub fn open_pr(path: &Path) -> Result<Option<String>> {
         repositories.push(parent);
     }
     for repository in repositories {
-        let output = command_at(
-            "gh",
-            &[
-                "pr", "list", "--repo", repository, "--state", "open", "--head", branch, "--limit",
-                "1", "--json", "url",
-            ],
-            Some(path),
-            30,
-        )?;
-        let prs: Value = serde_json::from_str(&output).context("invalid GitHub PR response")?;
-        let prs = prs.as_array().context("GitHub PR response is not a list")?;
-        if let Some(pr) = prs.first() {
-            return Ok(Some(
-                pr["url"]
-                    .as_str()
-                    .context("GitHub PR URL is unavailable")?
-                    .to_owned(),
-            ));
+        if let Some(branch) = branch {
+            let output = command_at(
+                "gh",
+                &[
+                    "pr", "list", "--repo", repository, "--state", "open", "--head", branch,
+                    "--limit", "1", "--json", "url",
+                ],
+                Some(path),
+                30,
+            )?;
+            let prs: Value = serde_json::from_str(&output).context("invalid GitHub PR response")?;
+            let prs = prs.as_array().context("GitHub PR response is not a list")?;
+            if let Some(pr) = prs.first() {
+                return Ok(Some(
+                    pr["url"]
+                        .as_str()
+                        .context("GitHub PR URL is unavailable")?
+                        .to_owned(),
+                ));
+            }
+        } else {
+            let endpoint = format!(
+                "repos/{repository}/commits/{}/pulls?per_page=100",
+                head.trim()
+            );
+            let output = command_at(
+                "gh",
+                &["api", &endpoint, "--paginate", "--slurp"],
+                Some(path),
+                30,
+            )?;
+            let pages: Value =
+                serde_json::from_str(&output).context("invalid commit PR response")?;
+            for page in pages.as_array().context("commit PR pages are not a list")? {
+                for pr in page.as_array().context("commit PR page is not a list")? {
+                    if pr["state"].as_str().context("missing PR state")? == "open" {
+                        return Ok(Some(
+                            pr["html_url"]
+                                .as_str()
+                                .context("missing PR URL")?
+                                .to_owned(),
+                        ));
+                    }
+                }
+            }
         }
     }
     Ok(None)
 }
 
-pub fn ensure_no_open_pr(path: &Path) -> Result<()> {
-    match open_pr(path).context("could not verify GitHub pull requests; worktree retained")? {
-        Some(url) => bail!("worktree has an open GitHub pull request: {url}"),
-        None => Ok(()),
+pub fn ensure_no_open_pr(path: &Path, require_verification: bool) -> Result<()> {
+    match open_pr(path) {
+        Ok(Some(url)) => bail!("worktree has an open GitHub pull request: {url}"),
+        Ok(None) => Ok(()),
+        Err(e) if require_verification => {
+            Err(e).context("could not verify GitHub pull requests; worktree retained")
+        }
+        Err(_) => Ok(()),
     }
 }

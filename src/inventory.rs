@@ -429,7 +429,7 @@ fn discover_projects(
                         }
                         Err(_) => i.protection = Some("cannot verify worktree HEAD".into()),
                     }
-                    match git(&path, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+                    match git(&path, &["rev-parse", "--symbolic-full-name", "HEAD"]) {
                         Ok(branch) => {
                             i.evidence
                                 .metadata
@@ -480,9 +480,19 @@ fn discover_projects(
                         i.protection = match crate::github::open_pr(&path) {
                             Ok(Some(url)) => Some(format!("open GitHub pull request: {url}")),
                             Ok(None) => None,
-                            Err(_) => Some(
-                                "could not verify GitHub pull requests; worktree protected".into(),
-                            ),
+                            Err(_) => {
+                                i.evidence
+                                    .metadata
+                                    .insert("pr_verification".into(), "unavailable".into());
+                                if c.worktree_require_pr_verification {
+                                    Some(
+                                        "could not verify GitHub pull requests; worktree protected"
+                                            .into(),
+                                    )
+                                } else {
+                                    None
+                                }
+                            }
                         };
                     }
                     items.push(i);
