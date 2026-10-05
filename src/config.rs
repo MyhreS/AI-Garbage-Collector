@@ -52,7 +52,7 @@ impl Default for Config {
             ]
             .map(|p| h.join(p))
             .to_vec(),
-            retention_days: 30,
+            retention_days: 7,
             pressure_retention_days: 7,
             min_free_bytes: 20 * GIB,
             docker_cache_budget_bytes: 5 * GIB,

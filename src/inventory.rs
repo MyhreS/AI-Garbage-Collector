@@ -427,6 +427,15 @@ fn discover_projects(
                                 .into(),
                         );
                     }
+                    if i.protection.is_none() && c.managed.contains_key(&i.id) {
+                        i.protection = match crate::github::open_pr(&path) {
+                            Ok(Some(url)) => Some(format!("open GitHub pull request: {url}")),
+                            Ok(None) => None,
+                            Err(_) => Some(
+                                "could not verify GitHub pull requests; worktree protected".into(),
+                            ),
+                        };
+                    }
                     items.push(i);
                 }
             }

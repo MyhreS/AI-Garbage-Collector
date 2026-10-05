@@ -244,6 +244,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             );
             let p = verify_path(item)?;
             inventory::worktree_safe(&p)?;
+            crate::github::ensure_no_open_pr(&p)?;
             ensure!(
                 !p.components().any(|p| matches!(
                     p.as_os_str().to_str(),
@@ -290,6 +291,7 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             let result = (|| -> Result<()> {
                 git(&p, &["bundle", "create", bundle_str, "HEAD"])?;
                 git(&p, &["bundle", "verify", bundle_str])?;
+                crate::github::ensure_no_open_pr(&p)?;
                 ensure!(
                     existing.saturating_add(fs::metadata(&bundle)?.len()) <= c.backup_budget_bytes,
                     "recovery bundle exceeds storage budget"

@@ -1,4 +1,4 @@
-# Adapter behavior in v0.2
+# Adapter behavior in v0.3
 
 AI Garbage Collector runs on the local Mac, using already-installed tools. It does not install dependencies, start Docker builders, run project build scripts or contact a remote development environment. Unavailable tools are reported as unavailable; missing information never authorizes removal.
 
@@ -17,6 +17,8 @@ AI Garbage Collector runs on the local Mac, using already-installed tools. It do
 `inspect ID` performs a fresh inventory and returns one resource. `status python --owners` and `status docker --builders` expose the deeper metadata. `own ID --owner TASK` records ownership. `require ID --project PROJECT` protects an explicit future requirement. `unrequire` removes that reference. Neither `own` nor `require` authorizes deletion.
 
 `manage ID --owner TASK` marks a supported resource disposable. Its current references, pins, activity, observation period and other protections still apply. Resource IDs should be copied exactly from status; Python environments discovered through existing project-local inventory can retain a `dependencies:` ID for compatibility.
+
+Managed Git worktrees also require a successful authenticated GitHub CLI lookup for open PRs on their branch in the checkout repository and its fork parent, if any. An open PR or failed lookup protects the worktree. The lookup is repeated before removal; PRs targeting unrelated repositories require an explicit pin or `require` entry.
 
 `duplicates` groups matching recorded inputs. Python fingerprints include lockfile, interpreter configuration and installed distribution metadata (including available direct-URL records); build/Node fingerprints cover available lock inputs. Fingerprints do not establish identical mutable contents, selected flags or safe interchangeability. No environments are merged.
 

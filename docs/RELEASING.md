@@ -12,8 +12,8 @@ Each run uploads two archives containing the executable, README, detailed docume
 2. Create and push a matching version tag:
 
    ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag v0.3.0
+   git push origin v0.3.0
    ```
 
 3. The **Release** workflow checks that the tag exists and matches the package version, then runs the shared build workflow.
@@ -36,11 +36,11 @@ Use **Actions → Update Homebrew formula → Run workflow** to refresh it manua
 A local update uses:
 
 ```sh
-python3 scripts/update-homebrew.py --tag v0.2.0 --checksums /path/to/SHA256SUMS
+python3 scripts/update-homebrew.py --tag v0.3.0 --checksums /path/to/SHA256SUMS
 ruby -c Formula/aigc.rb
 ```
 
-The formula has no test block and the workflow runs no tests. Homebrew installation does not start the service; users opt in with `brew services start myhres/aigc/aigc`.
+The formula has no test block and the workflow runs no tests. A direct `brew install` does not start the service; the documented Brewfile installs and starts it in one command.
 
 ## Local build storage
 

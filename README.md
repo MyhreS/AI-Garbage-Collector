@@ -8,7 +8,7 @@ AI Garbage Collector exists to clean up after AI coding agents. Running many age
 
 No cloud environment, subscription, account, or AI model. A release installs as one native executable; users do not need Rust, Python, or Node.
 
-**Version 0.2 adds detailed ownership and native-tool adapters.** It does not yet safely automate every category it can report. Read the coverage table before enabling it.
+**Version 0.3 adds open-PR protection for disposable Git worktrees.** It does not yet safely automate every category it can report. Read the coverage table before enabling it.
 
 ## Install
 
@@ -56,7 +56,7 @@ rm /tmp/aigc-install.sh
 
 The installer verifies the release archive's SHA-256 checksum, installs `~/.local/bin/aigc`, and starts an hourly per-user LaunchAgent. It prints the full executable path if `~/.local/bin` is not on your `PATH`. It does not request administrator access or edit your shell startup files.
 
-Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.2.0` to select a particular release.
+Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.3.0` to select a particular release.
 
 ### Build and install from source
 
@@ -101,13 +101,13 @@ Counts are resource counts, not agent/session counts. Detailed Docker cache entr
 
 ## What it does and does not clean
 
-| Resource | Reports | Automatic cleanup in v0.2 |
+| Resource | Reports | Automatic cleanup in v0.3 |
 | --- | --- | --- |
 | Xcode DerivedData children | Yes | After observed inactivity and activity checks |
 | `node_modules` | Yes | Recognized project folders only; refuses Git-tracked files |
 | Python / Poetry project environments | Project associations, interpreter metadata, matching-input candidates | Explicitly disposable, unshared environments only; linked environments and installed tools protected |
 | Rust `target`, Swift `.build`, Next.js `.next` | Yes | Recognized project folders only; refuses Git-tracked files |
-| Regular Git linked worktrees | Yes | Only explicitly registered disposable trees; must be clean, including ignored files; verifies a recovery bundle first |
+| Regular Git linked worktrees | Yes | Only explicitly registered disposable trees; must be clean, including ignored files, have no open GitHub PR, and pass a verified recovery bundle |
 | App-managed worktrees under `.codex` / `.codex-workspaces` | Yes | **Protected.** Use the owning application's archive tool; aigc does not edit its session database |
 | Docker build cache | Per-record metadata from running local single-node Buildx builders | Exact-ID native Buildx pruning; private immutable regular records only, native age filter and storage setting |
 | Docker images | Yes | Only images explicitly registered disposable; native removal without force |
@@ -153,7 +153,7 @@ Both recommended installers start the service immediately. Each hourly run inven
 
 | Setting | Default |
 | --- | --- |
-| Normal observed inactivity | 30 days |
+| Normal observed inactivity | 7 days |
 | Inactivity when available space is below the target | 7 days |
 | Free-space target | 20 GiB |
 | Docker cache storage setting | 5 GiB |
@@ -237,7 +237,9 @@ aigc manage 'docker-images:sha256:FULL-IMAGE-ID' --owner task-123
 aigc unmanage 'emulators:throwaway-pixel'
 ```
 
-Registration authorizes disposal after policy checks. It does not bypass pins, activity checks, worktree changes, or app-managed worktree protection. For devices/images, register only data you are willing to lose. Inventory still works without registration.
+Registration authorizes disposal after policy checks. It does not bypass pins, activity checks, worktree changes, open-PR checks, or app-managed worktree protection. For devices/images, register only data you are willing to lose. Inventory still works without registration.
+
+For a managed Git worktree, `aigc` uses an authenticated [GitHub CLI](https://cli.github.com/manual/) to check open PRs with the same branch in the checkout's repository and, for a fork, its parent. An open PR protects the worktree. If `gh` is missing, unauthenticated, or the lookup fails, the worktree stays protected. The check runs during inventory and again before Git removes the worktree. Keep your checkout's GitHub remote and authentication available; PRs targeting unrelated repositories are outside this lookup.
 
 ## Use it from an agent
 
