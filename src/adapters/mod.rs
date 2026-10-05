@@ -106,7 +106,10 @@ pub fn scan(c: &Config, projects: &[PathBuf], items: &mut Vec<Item>, warnings: &
             .iter()
             .any(|w| w.contains("project discovery") || w.contains("skipped symlink root"));
     if incomplete {
-        for i in items.iter_mut().filter(|i| i.evidence.action.is_some()) {
+        for i in items
+            .iter_mut()
+            .filter(|i| i.evidence.action.is_some() && !python::central_environment(i))
+        {
             i.complete = false;
         }
     }
@@ -200,9 +203,10 @@ pub fn remove(i: &Item, c: &Config) -> Result<String> {
     match i.evidence.action.as_ref().context("no native action")? {
         Action::Directory => {
             let p = i.path.as_ref().context("missing path")?;
+            python::verify_central_environment(i)?;
             disposable_path(p, &i.kind)?;
             fs::remove_dir_all(p)?;
-            Ok("Removed explicitly disposable generated resource".into())
+            Ok("Removed idle generated resource".into())
         }
         Action::Poetry {
             project,

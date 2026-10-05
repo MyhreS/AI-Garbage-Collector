@@ -42,9 +42,6 @@ pub fn scan(projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<Stri
                         "Poetry environment mapping unavailable for {}",
                         project.display()
                     ));
-                    for i in items.iter_mut().filter(|i| i.kind == "python") {
-                        i.complete = false;
-                    }
                 }
             }
         }
@@ -55,15 +52,27 @@ pub fn scan(projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<Stri
             &["--no-plugins", "config", "virtualenvs.path"],
             None,
         )
+        && let Ok(root) = crate::runtime::canonical(Path::new(root.trim()))
     {
-        for p in children(Path::new(root.trim())) {
-            if p.join("pyvenv.cfg").is_file() && !known.contains(&p) {
-                add(&p, None, false, Some("poetry"), items);
+        for p in children(&root) {
+            if p.join("pyvenv.cfg").is_file() {
+                if !known.contains(&p) {
+                    add(&p, None, false, Some("poetry"), items);
+                }
+                if let Some(i) = items.iter_mut().find(|i| i.path.as_ref() == Some(&p)) {
+                    i.evidence.metadata.insert(
+                        "poetry_environment_root".into(),
+                        Value::String(root.display().to_string()),
+                    );
+                }
             }
         }
     }
     if mapping_failed {
-        for i in items.iter_mut().filter(|i| i.kind == "python") {
+        for i in items
+            .iter_mut()
+            .filter(|i| i.kind == "python" && !central_environment(i))
+        {
             i.complete = false;
         }
     }
@@ -117,7 +126,7 @@ fn add(
         if let Some(f) = fingerprint(project, path) {
             i.evidence.fingerprint = Some(f);
         }
-    } else {
+    } else if manager != Some("poetry") {
         i.protection = Some("owner unknown; no discovered project association".into());
     }
     if linked {
@@ -193,4 +202,37 @@ fn fingerprint(project: &Path, environment: &Path) -> Option<String> {
     hash.update(interpreter.join("\0"));
     hash.update(records.join("\0"));
     Some(format!("python:{:x}", hash.finalize()))
+}
+
+// A native manager root establishes that an orphan is a generated environment,
+// even after its original worktree has disappeared. Recheck the root before removal.
+pub fn central_environment(i: &Item) -> bool {
+    i.kind == "python"
+        && i.evidence
+            .metadata
+            .get("poetry_environment_root")
+            .and_then(Value::as_str)
+            .is_some()
+}
+pub fn verify_central_environment(i: &Item) -> Result<()> {
+    if let Some(root) = i
+        .evidence
+        .metadata
+        .get("poetry_environment_root")
+        .and_then(Value::as_str)
+    {
+        let current = tool(
+            "poetry",
+            &["--no-plugins", "config", "virtualenvs.path"],
+            None,
+        )?;
+        let current = crate::runtime::canonical(Path::new(current.trim()))?;
+        let path = i.path.as_ref().context("missing environment path")?;
+        ensure!(
+            current == Path::new(root) && path.parent() == Some(current.as_path()),
+            "Poetry environment root changed"
+        );
+        disposable_path(path, "python")?;
+    }
+    Ok(())
 }

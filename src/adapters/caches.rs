@@ -42,12 +42,12 @@ pub fn scan(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
                 i.evidence
                     .metadata
                     .insert("manager".into(), Value::String(manager.into()));
-                i.evidence.reconstruction = "Native cache maintenance can cause later downloads or rebuilds; explicit registration and a cooldown are required.".into();
+                i.evidence.reconstruction = "Native cache maintenance can cause later downloads or rebuilds; age, size budget and cooldown checks apply.".into();
                 if root.is_symlink() || !root.starts_with(home()) {
                     i.protection = Some("shared or external cache location".into());
                 }
                 if manager == "uv" {
-                    i.protection = Some("native uv prune also removes centralized environments; collect registered project environments instead".into());
+                    i.protection = Some("native uv prune also removes centralized environments; collect recognized project environments instead".into());
                 }
                 if manager == "poetry" {
                     i.protection = Some(

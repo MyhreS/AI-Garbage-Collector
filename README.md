@@ -4,7 +4,7 @@
 
 `aigc` is a local CLI and hourly garbage collector for abandoned worktrees, dependencies, build output and virtual devices. Keep using the storage you have—no cloud, subscription or AI model required.
 
-> **Default cleanup:** worktrees idle for 7 days can be deleted immediately after installation, including uncommitted and ignored files, **without recovery**. Detected activity, open PRs and aigc pins protect them. Failed PR lookups do **not** block deletion by default.
+> **Default cleanup:** all implemented cleanup categories are enabled. Worktrees idle for 7 days can be deleted immediately after installation, including uncommitted and ignored files, **without recovery**. Detected activity, open PRs and aigc pins protect them. Failed PR lookups do **not** block deletion by default.
 
 ## Install
 
@@ -57,13 +57,14 @@ aigc service status            # Check the background scheduler
 | --- | --- |
 | Git worktrees, including Codex and Claude | Remove after 7 days since the latest file write, HEAD commit or detected use. Dirty trees are force-removed; clean trees require a verified Git recovery bundle. |
 | Recognized dependencies and build output | Remove eligible `node_modules`, Rust/Swift/Next.js output and Xcode DerivedData after observed inactivity; protect tracked source. |
-| Python/Poetry environments, devices, runtimes, SDKs, scratch output | Only eligible, explicitly disposable resources. Xcode/iOS support is macOS-only. |
-| pip, pnpm and npm caches | Opt-in native maintenance. |
+| Python/Poetry environments | Automatically remove after 7 days since the latest file write or detected use, including the first scan. Orphaned Poetry environments are included. |
+| Devices, runtimes, SDKs | Automatically collect eligible resources after activity and dependency checks. Xcode/iOS support is macOS-only. |
+| pip, pnpm and npm caches | Automatic native maintenance above the configured cache budget. |
 | Other manager caches, browsers, Xcode archives and recovery bundles | Report only or protected. |
 
-Other filesystem resources require **7 days of observed inactivity**. Storage figures are estimates. Docker is unsupported. The app does not deduplicate environments, archive agent chats, sweep personal files or manage remote machines.
+Custom scratch paths require registration for discovery. Other filesystem resources require **7 days of observed inactivity**. Storage figures are estimates. Docker is unsupported. The app does not deduplicate environments, archive agent chats, sweep personal files or manage remote machines.
 
-Activity detection is best effort. Running agents elsewhere do not block worktree cleanup. **Windows** lacks per-file activity attribution; `aigc run` reservations need explicit release. Codex chat pins are not read—use `aigc pin` to preserve a worktree.
+Activity detection is best effort. Running agents elsewhere do not block worktree cleanup. **Windows** detects running environment interpreters but lacks general per-file activity attribution; `aigc run` reservations need explicit release. Codex chat pins are not read—use `aigc pin` to preserve a worktree.
 
 ## Documentation
 

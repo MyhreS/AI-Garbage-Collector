@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 9;
+pub const POLICY_VERSION: u32 = 10;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -64,10 +64,12 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         let gap = time.saturating_sub(o.last_seen) > 48 * 3600;
         i.evidence.observation_gap = gap;
         let worktree = i.kind == "worktrees";
+        let filesystem_age = worktree || i.kind == "python";
         let signature_changed = o.signature != signature;
         if i.active
             || a.touches(i.path.as_deref())
-            || (worktree && (signature_changed || i.evidence.consumers.iter().any(|r| r.protects)))
+            || (filesystem_age
+                && (signature_changed || i.evidence.consumers.iter().any(|r| r.protects)))
         {
             o.last_used = Some(time);
         }
@@ -83,13 +85,17 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         }
         o.signature = signature;
         o.last_seen = time;
-        i.idle_seconds = if worktree {
-            let head_committed_at = i.evidence.metadata["head_committed_at"]
-                .as_u64()
-                .unwrap_or(time);
+        i.idle_seconds = if filesystem_age {
+            let head_committed_at = i
+                .evidence
+                .metadata
+                .get("head_committed_at")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
             let last_write_or_use = i
                 .modified
                 .max(head_committed_at)
+                .max(i.evidence.native_last_used.unwrap_or(0))
                 .max(o.last_used.unwrap_or(0));
             time.saturating_sub(last_write_or_use)
         } else {
@@ -107,8 +113,6 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             .registered
             .iter()
             .find(|r| i.path.as_ref() == Some(&r.path));
-        let needs_registration =
-            i.evidence.action.is_some() || matches!(i.kind.as_str(), "simulators" | "emulators");
         let cooldown = s
             .maintenance
             .get(&i.id)
@@ -155,8 +159,10 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             (Status::Protected, "worktree cleanup disabled".into())
         } else if worktree
             && !c.worktree_force
-            && i.evidence.metadata["uncommitted_or_ignored_files"]
-                .as_bool()
+            && i.evidence
+                .metadata
+                .get("uncommitted_or_ignored_files")
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true)
         {
             (
@@ -168,17 +174,12 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                 Status::Protected,
                 "report-only category in this version".into(),
             )
-        } else if needs_registration && !c.managed.contains_key(&i.id) && registered.is_none() {
-            (
-                Status::Protected,
-                "not registered as disposable; use aigc manage".into(),
-            )
         } else if a.global_reserved {
             (
                 Status::Protected,
                 "an explicit aigc run reservation protects all resources".into(),
             )
-        } else if a.busy && !worktree {
+        } else if (a.busy && !filesystem_age) || (i.kind == "python" && a.python_activity_unknown) {
             (
                 Status::Protected,
                 "a build or agent process is running; collection deferred".into(),
@@ -195,6 +196,10 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                     format!(
                         "requires {days} days since the latest file write, HEAD commit or detected use"
                     )
+                } else if filesystem_age {
+                    format!(
+                        "requires {days} days since the latest environment file write or detected use"
+                    )
                 } else {
                     format!("requires {days} days of observed inactivity")
                 },
@@ -206,6 +211,10 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                     format!(
                         "no file write, HEAD commit or detected use for at least {days} days; rechecked before deletion"
                     )
+                } else if filesystem_age {
+                    format!(
+                        "no environment file write or detected use for at least {days} days; rechecked before deletion"
+                    )
                 } else {
                     format!("observed idle for at least {days} days; rechecked before deletion")
                 },
@@ -213,7 +222,11 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         };
         if worktree
             && status == Status::Eligible
-            && i.evidence.metadata["pr_verification"] == "unavailable"
+            && i.evidence
+                .metadata
+                .get("pr_verification")
+                .and_then(serde_json::Value::as_str)
+                == Some("unavailable")
         {
             reason.push_str("; PR verification unavailable, allowed by configuration");
         }

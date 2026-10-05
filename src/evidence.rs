@@ -6,8 +6,10 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(unix)]
+use std::collections::HashSet;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
@@ -229,7 +231,8 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
         .iter()
         .filter(|p| !roots.iter().any(|q| q != *p && p.starts_with(q)))
         .collect();
-    let mut summary = StorageSummary { complete: items.iter().filter(|i| i.path.is_some()).all(|i| i.complete), note: "Filesystem union counts hardlinks once and excludes nested duplicate totals. Clone/snapshot sharing is not exact reclaimable space. Windows sizes are logical bytes, not allocated bytes.".into(), ..Default::default() };
+    let mut summary = StorageSummary { complete: items.iter().filter(|i| i.path.is_some()).all(|i| i.complete), note: "Filesystem totals exclude nested duplicate resources. Unix counts hardlinks once; Windows reports logical bytes and may count hardlinks more than once. Clone/snapshot sharing is not exact reclaimable space.".into(), ..Default::default() };
+    #[cfg(unix)]
     let mut seen = HashSet::new();
     'roots: for p in roots {
         for entry in WalkDir::new(p).follow_links(false).same_file_system(true) {
@@ -248,12 +251,15 @@ pub fn enrich(items: &mut [Item], c: &Config, a: &Activity) -> StorageSummary {
                         summary.complete = false;
                         continue;
                     }
-                    let Ok(id) = crate::platform::file_id(e.path(), &m) else {
-                        summary.complete = false;
-                        continue;
-                    };
-                    if !seen.insert(id) {
-                        continue;
+                    #[cfg(unix)]
+                    {
+                        let Ok(id) = crate::platform::file_id(e.path(), &m) else {
+                            summary.complete = false;
+                            continue;
+                        };
+                        if !seen.insert(id) {
+                            continue;
+                        }
                     }
                     summary.filesystem_allocated_union_bytes = summary
                         .filesystem_allocated_union_bytes

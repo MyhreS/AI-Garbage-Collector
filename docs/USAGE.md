@@ -131,15 +131,15 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | --- | --- | --- |
 | Xcode DerivedData children | Yes | After observed inactivity and activity checks |
 | `node_modules` | Yes | Recognized project folders only; refuses Git-tracked files |
-| Python / Poetry project environments | Project associations, interpreter metadata, matching-input candidates | Explicitly disposable, unshared environments only; linked environments and installed tools protected |
+| Python / Poetry project environments | Project associations, interpreter metadata, matching-input candidates | Automatic after 7 days since the latest write or detected use, including orphaned Poetry environments; shared/linked environments and installed tools protected |
 | Rust `target`, Swift `.build`, Next.js `.next` | Yes | Recognized project folders only; refuses Git-tracked files |
 | Regular Git linked worktrees | Yes | Automatic after seven days since the latest file write, HEAD commit or detected use, including on the first scan. Dirty trees are force-removed with no recovery of local files. Clean trees require a verified HEAD recovery bundle. Open GitHub PRs are protected. |
 | Codex worktrees under `.codex` / `.codex-workspaces` | Yes | Same seven-day policy as other linked worktrees; native Git removal, without a Codex snapshot or chat archival |
-| iOS simulator devices | Yes | Only registered disposable, shut-down devices; deletes app data through `simctl` |
-| Android AVDs | Yes | Only registered disposable AVDs; requires `avdmanager`; defers while any emulator is running |
-| iOS simulator runtimes | Native disk registration, build and retained devices | Explicitly disposable runtimes only, no retained devices; supported native schema required |
-| Android SDK packages | Installed package IDs, AVD references and simple Gradle declarations | Explicitly disposable packages only; unresolved Gradle requirements protect packages |
-| pip, pnpm, npm caches | Manager-configured paths | Opt-in native purge/prune/verify after observed inactivity, size budget and cooldown |
+| iOS simulator devices | Yes | Eligible shut-down devices; deletes app data through `simctl` |
+| Android AVDs | Yes | Eligible idle AVDs; requires `avdmanager`; defers while any emulator is running |
+| iOS simulator runtimes | Native disk registration, build and retained devices | Eligible runtimes with no retained devices; supported native schema required |
+| Android SDK packages | Installed package IDs, AVD references and simple Gradle declarations | Eligible packages; unresolved Gradle requirements protect packages |
+| pip, pnpm, npm caches | Manager-configured paths | Automatic native purge/prune/verify after observed inactivity, size budget and cooldown |
 | uv, Poetry, Cargo, Gradle, Yarn, Bun storage | Configured or documented locations; scope varies by adapter | **Report only**; native ownership/retention can span resources |
 | Playwright browsers, npx installations | Revisions/installations and available package references | **Report only**; keep native ownership controls |
 | Homebrew cache | Configured cache path and native cleanup preview | **Report only**; native cleanup also affects installed versions |
@@ -164,7 +164,7 @@ aigc require 'EXACT-RESOURCE-ID' --project my-project
 aigc unrequire 'EXACT-RESOURCE-ID' --project my-project
 ```
 
-`own` records ownership without authorizing deletion. `require` protects a resource needed by a project, including future builds. `manage` authorizes disposal for opt-in categories after all other checks. Regular linked worktrees need no `manage` command. Inspection includes process IDs/start times, known consumers, native metadata, observation coverage, reconstruction notes and protection reasons. It does not identify every agent session automatically.
+`own` records ownership without authorizing deletion. `require` protects a resource needed by a project, including future builds. All implemented cleanup adapters are enabled automatically; `manage` records ownership. Use `pin` to prevent cleanup. Inspection includes process IDs/start times, known consumers, native metadata, observation coverage, reconstruction notes and protection reasons. It does not identify every agent session automatically.
 
 `duplicates` groups matching recorded dependency/build inputs. It never merges environments or assumes matching lockfiles make two mutable installations interchangeable. Native previews can include resources that aigc would protect; a preview does not grant deletion permission.
 
@@ -185,7 +185,7 @@ The terminal installers and Homebrew Brewfile start the service immediately. Eac
 | Maintenance/recollection cooldown | 7 days |
 | Schedule | Every hour while your user session is logged in; also when loaded |
 
-**A first install can remove old regular linked worktrees immediately.** Their clock uses the newest file or directory modification time, HEAD commit time and any detected use. It cannot tell whether somebody read or intends to reuse a worktree. All other filesystem resources require seven days of observed inactivity; a change in size, modification time, entry count or detected use resets that clock, as does a monitoring gap longer than 48 hours.
+**A first install can remove old regular linked worktrees immediately.** Their clock uses the newest file or directory modification time, HEAD commit time and any detected use. It cannot tell whether somebody read or intends to reuse a worktree. Python/Poetry environments likewise use recursive file write timestamps and detected use, including the first scan and orphaned central environments. Other filesystem resources require seven days of observed inactivity; a change in size, modification time, entry count or detected use resets that clock, as does a monitoring gap longer than 48 hours.
 
 The free-space target is a policy trigger, not a guarantee or hard quota. The collector does not remove protected resources to meet it. Native commands may reclaim less than their reported scope.
 

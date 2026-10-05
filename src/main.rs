@@ -75,7 +75,7 @@ enum Commands {
         #[arg(long, default_value_t = 30)]
         retain_days: u64,
     },
-    /// Stop managing a registered generated directory.
+    /// Remove custom directory discovery. Recognized resources remain automatically managed.
     Unregister { path: PathBuf },
     /// List cooperative reservations, including ones retained after a crashed wrapper.
     Leases,
@@ -95,13 +95,13 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
-    /// Mark an opt-in resource ID from status --json as disposable. Device data will be lost on deletion.
+    /// Record an owner for an automatically managed resource ID from status --json.
     Manage {
         id: String,
         #[arg(long, default_value = "user")]
         owner: String,
     },
-    /// Stop treating a resource as disposable.
+    /// Remove the managed owner label. Use pin to prevent cleanup.
     Unmanage { id: String },
     /// Protect a resource ID or an absolute directory and its descendants.
     Pin { target: String },

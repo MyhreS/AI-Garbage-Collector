@@ -1,4 +1,4 @@
-# Adapter behavior in v0.5
+# Cleanup adapters
 
 AI Garbage Collector runs on the local computer, using already-installed tools. It does not install dependencies, run project build scripts or contact a remote development environment. Unavailable tools are reported as unavailable; missing information never authorizes removal.
 
@@ -16,7 +16,7 @@ AI Garbage Collector runs on the local computer, using already-installed tools. 
 
 `inspect ID` performs a fresh inventory and returns one resource. `status python --owners` exposes the deeper metadata. `own ID --owner TASK` records ownership. `require ID --project PROJECT` protects an explicit future requirement. `unrequire` removes that reference. Neither `own` nor `require` authorizes deletion.
 
-`manage ID --owner TASK` marks an opt-in resource disposable. Its current references, pins, activity, observation period and other protections still apply. Regular linked Git worktrees no longer need registration. Resource IDs should be copied exactly from status; Python environments discovered through existing project-local inventory can retain a `dependencies:` ID for compatibility.
+All implemented cleanup adapters are enabled by default. `manage ID --owner TASK` records an owner; it is not required to enable cleanup. References, pins, activity and age checks still apply. Resource IDs should be copied exactly from status; Python environments discovered through existing project-local inventory can retain a `dependencies:` ID for compatibility.
 
 Regular linked Git worktrees use the latest file or directory modification time, HEAD commit time and detected use as the inactivity clock. Seven-day-old trees can qualify on the first scan, including trees with tracked edits, untracked files and ignored files. Those dirty trees are removed with `git worktree remove --force` and **no recovery copy of local files**. The Git branch remains. Clean trees still require a verified HEAD bundle. Set `worktree-cleanup false` to disable this adapter or `worktree-force false` to retain dirty trees.
 
@@ -26,9 +26,11 @@ Before deletion, regular worktrees check for open PRs in the checkout repository
 
 ## Python
 
-The scanner associates project-local environments and Poetry-listed central environments with discovered `pyproject.toml` projects. It resolves Poetry's configured environment path. Unknown-owner central environments are protected until explicitly registered as disposable generated storage. Linked/centralized environments and environments referenced by multiple projects are protected.
+The scanner associates project-local environments and Poetry-listed central environments with discovered `pyproject.toml` projects. It resolves Poetry's configured environment path. Old central environments qualify even when their original project no longer exists. Symlinked environments and environments referenced by multiple discovered projects are protected.
 
-Known Poetry environments are removed through Poetry. Other explicitly disposable, validated project environments use directory removal. `pyvenv.cfg`, path identity, tracked-source checks, native association and activity are rechecked. Installed uv/pipx tool environments in recognized locations are report-only.
+Python environments use the latest recursive file/directory write, native last-use timestamp when available and detected activity. Seven-day-old environments can qualify on the first scan. File timestamps cannot prove that an environment has not been read. On Windows, running interpreter executable paths protect their environments; a Python process whose executable path cannot be inspected defers Python cleanup. Unrelated agent processes do not block it.
+
+Project-associated Poetry environments are removed through Poetry. Orphaned environments directly inside the native configured Poetry environment root use validated directory removal, with the root queried again immediately beforehand. Other recognized project environments use directory removal. `pyvenv.cfg`, path identity, tracked-source checks, native association and activity are rechecked. Installed uv/pipx tool environments in recognized locations are report-only.
 
 This does not enumerate every environment on the whole disk, execute environment interpreters, infer all extras/groups or discover arbitrary tool-manager roots. Discovery is bounded; use configured project roots and explicit registration where ownership is known. Custom tool installations should remain unregistered.
 
@@ -36,9 +38,9 @@ This does not enumerate every environment on the whole disk, execute environment
 
 | Storage | Discovery | Cleanup |
 | --- | --- | --- |
-| pip | `pip3 cache dir`, native summary | Opt-in `pip3 cache purge`; covers HTTP and wheel cache |
-| pnpm | `pnpm store path` | Opt-in `pnpm store prune`; native store-server protection applies |
-| npm | Configured cache root | Opt-in `npm cache verify`; this command mutates the cache |
+| pip | `pip3 cache dir`, native summary | Automatic `pip3 cache purge`; covers HTTP and wheel cache |
+| pnpm | `pnpm store path` | Automatic `pnpm store prune`; native store-server protection applies |
+| npm | Configured cache root | Automatic `npm cache verify`; this command mutates the cache |
 | uv | `uv cache dir` | Report-only: prune may remove centralized environments or break symlink consumers |
 | Poetry | Configured cache root and cache names | Report-only: root may include environments |
 | Homebrew | `brew --cache` | Native dry-run through `preview`; cleanup can affect Cellar versions beyond the cache |
@@ -48,7 +50,7 @@ This does not enumerate every environment on the whole disk, execute environment
 | Playwright | Default/custom browser path, revisions and available package links | Report-only; keep Playwright's native package-aware GC |
 | npx | Installation directories under configured npm cache | Report-only; arbitrary tool use cannot be inferred from age |
 
-Supported native maintenance requires explicit disposable registration, cache size above `budget.package-cache`, observed inactivity and the configured cooldown. Pins inside a cache protect its containing resource. Native paths are queried again immediately before maintenance. A successful operation is recorded as maintenance, not a claim that the whole cache was deleted.
+Supported native maintenance requires cache size above `budget.package-cache`, observed inactivity and the configured cooldown. Pins inside a cache protect its containing resource. Native paths are queried again immediately before maintenance. A successful operation is recorded as maintenance, not a claim that the whole cache was deleted.
 
 No cache manager is installed automatically. A manager's default path is not proof that every project uses that path. Do not mark a shared cache disposable if an untracked consumer relies on its exact contents or offline availability.
 
@@ -67,7 +69,7 @@ aigc register /Users/me/Projects/task/package-staging --kind scratch \
 
 Supported kinds are `scratch`, `builds` and `python`. Registration records owner, purpose and minimum retention deadline. It authorizes generated-content disposal only. Home roots, recognized sensitive/application/personal locations, tracked source, nested repositories, noncanonical paths and incomplete scans are refused. A registered Python path must contain `pyvenv.cfg`. A regular linked Git worktree is handled by the worktree policy above.
 
-`unregister PATH` withdraws this registration. `unmanage ID` separately withdraws ID-based disposal permission.
+`unregister PATH` withdraws this registration. `unmanage ID` clears its managed owner label. Use `pin ID` to prevent automatic cleanup of recognized resources.
 
 ## Mobile resources
 
@@ -75,7 +77,7 @@ Supported kinds are `scratch`, `builds` and `python`. Registration records owner
 
 The scanner connects simulator runtime identifiers/builds to native runtime disk UUIDs where the installed schema exposes them. Every retained simulator device referencing a runtime protects it, including shut-down devices. Unknown runtime schemas remain protected.
 
-Runtime removal requires explicit disposal, observed inactivity, no retained device references and fresh native identity checks. It uses exact-UUID `simctl runtime delete`; it never sweeps mounted runtime directories. Native deletion can otherwise shut down devices, so consumer checks are required. An external process can still race a final check; cooperate through reservations and pins.
+Runtime removal requires observed inactivity, no retained device references and fresh native identity checks. It uses exact-UUID `simctl runtime delete`; it never sweeps mounted runtime directories. Native deletion can otherwise shut down devices, so consumer checks are required. An external process can still race a final check; cooperate through reservations and pins.
 
 `preview RUNTIME-ID` uses the native age-based `--dry-run` when supported. That preview can list all native age candidates and is not an aigc-approved deletion list.
 
@@ -83,7 +85,7 @@ Runtime removal requires explicit disposal, observed inactivity, no retained dev
 
 Installed packages come from `sdkmanager --list_installed` under the configured SDK root. The adapter maps AVD system-image references and simple literal Gradle platform/version declarations. Dynamic or absent declarations protect packages. Implicit build-tool/CMake requirements and undeclared NDK versions remain conservative.
 
-SDK removal requires explicit disposal, no retained known consumers, complete inventory and the normal observation period. It invokes native package-ID uninstall after revalidating roots and references. Custom Gradle plugins and undiscovered projects require explicit pins/requirements; installing an older SDK does not make it garbage.
+SDK removal requires no retained known consumers, complete inventory and the normal observation period. It invokes native package-ID uninstall after revalidating roots and references. Custom Gradle plugins and undiscovered projects require explicit pins/requirements; installing an older SDK does not make it garbage.
 
 Existing disposable-AVD handling remains, including deferral while an emulator may be running. Device app data is not recoverable after an authorized device deletion.
 

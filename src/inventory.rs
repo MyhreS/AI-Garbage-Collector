@@ -85,6 +85,7 @@ pub struct Report {
 pub struct Activity {
     pub reliable: bool,
     pub busy: bool,
+    pub python_activity_unknown: bool,
     pub global_reserved: bool,
     pub open_paths: Vec<PathBuf>,
     pub processes: Vec<crate::evidence::Process>,
@@ -160,6 +161,7 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
     if crate::platform::is_link(&root) {
         return (0, 0, 0, false);
     }
+    #[cfg(unix)]
     let Ok(root_id) = crate::platform::file_id(path, &root) else {
         return (0, 0, 0, false);
     };
@@ -167,6 +169,7 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
     let mut modified = 0;
     let mut count = 0;
     let mut complete = true;
+    #[cfg(unix)]
     let mut inodes = HashSet::new();
     for e in WalkDir::new(path)
         .follow_links(false)
@@ -187,15 +190,25 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
                     complete = false;
                     continue;
                 }
-                let Ok(id) = crate::platform::file_id(e.path(), &m) else {
-                    complete = false;
-                    continue;
-                };
-                if crate::platform::volume(id) != crate::platform::volume(root_id) {
-                    complete = false;
-                    continue;
+                #[cfg(unix)]
+                {
+                    let Ok(id) = crate::platform::file_id(e.path(), &m) else {
+                        complete = false;
+                        continue;
+                    };
+                    if crate::platform::volume(id) != crate::platform::volume(root_id) {
+                        complete = false;
+                        continue;
+                    }
+                    if inodes.insert(id) {
+                        bytes = bytes.saturating_add(crate::platform::bytes(&m));
+                    }
                 }
-                if inodes.insert(id) {
+                // Opening every Windows file for its identity makes inventories of
+                // hundreds of environments prohibitively slow. Report logical bytes;
+                // the root identity is still checked before deletion.
+                #[cfg(windows)]
+                {
                     bytes = bytes.saturating_add(crate::platform::bytes(&m));
                 }
                 modified = modified.max(crate::platform::modified(&m));
@@ -465,15 +478,20 @@ fn discover_projects(
                         }
                     }
                     let latest_write_or_commit = i.modified.max(
-                        i.evidence.metadata["head_committed_at"]
-                            .as_u64()
+                        i.evidence
+                            .metadata
+                            .get("head_committed_at")
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(u64::MAX),
                     );
                     if i.protection.is_none()
                         && c.worktree_cleanup
                         && (c.worktree_force
-                            || !i.evidence.metadata["uncommitted_or_ignored_files"]
-                                .as_bool()
+                            || !i
+                                .evidence
+                                .metadata
+                                .get("uncommitted_or_ignored_files")
+                                .and_then(serde_json::Value::as_bool)
                                 .unwrap_or(true))
                         && now().saturating_sub(latest_write_or_commit)
                             >= c.pressure_retention_days.min(c.retention_days) * 86400
@@ -655,6 +673,29 @@ pub fn activity(state_dir: &Path) -> Activity {
             .iter()
             .any(|p| n == *p || n.starts_with(&format!("{p}-")))
         });
+    }
+    // Windows exposes executable paths, which identify running venv interpreters.
+    // Missing paths for a Python process mean its environment cannot be attributed.
+    match crate::platform::powershell("@(Get-CimInstance Win32_Process | Select-Object ProcessId,Name,ExecutablePath) | ConvertTo-Json -Compress")
+        .and_then(|s| Ok(serde_json::from_str::<Vec<serde_json::Value>>(&s)?)) {
+        Ok(processes) => {
+            for p in processes {
+                let name = p["Name"].as_str().unwrap_or_default();
+                let path = p["ExecutablePath"].as_str().filter(|s| !s.is_empty()).map(PathBuf::from);
+                if name.to_ascii_lowercase().starts_with("python") && path.is_none() {
+                    a.python_activity_unknown = true;
+                }
+                if let Some(path) = path {
+                    let paths = vec![crate::platform::normalize(path)];
+                    a.open_paths.extend(paths.clone());
+                    a.processes.push(crate::evidence::Process {
+                        pid: p["ProcessId"].as_u64().unwrap_or(0) as u32,
+                        executable: name.into(), paths, ..Default::default()
+                    });
+                }
+            }
+        }
+        Err(_) => a.python_activity_unknown = true,
     }
     crate::leases::apply(state_dir, &mut a);
     a

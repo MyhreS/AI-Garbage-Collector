@@ -80,7 +80,8 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
         });
         let precheck = if !activity.reliable
             || activity.global_reserved
-            || (activity.busy && item.kind != "worktrees")
+            || (activity.busy && !matches!(item.kind.as_str(), "worktrees" | "python"))
+            || (item.kind == "python" && activity.python_activity_unknown)
             || reserved
             || activity.touches(item.path.as_deref())
         {
@@ -193,8 +194,17 @@ fn verify_worktree_ref(item: &Item, path: &Path) -> Result<()> {
     let head = git(path, &["rev-parse", "HEAD"])?;
     let branch = git(path, &["rev-parse", "--symbolic-full-name", "HEAD"])?;
     ensure!(
-        item.evidence.metadata["head_oid"].as_str() == Some(head.trim())
-            && item.evidence.metadata["branch"].as_str() == Some(branch.trim()),
+        item.evidence
+            .metadata
+            .get("head_oid")
+            .and_then(serde_json::Value::as_str)
+            == Some(head.trim())
+            && item
+                .evidence
+                .metadata
+                .get("branch")
+                .and_then(serde_json::Value::as_str)
+                == Some(branch.trim()),
         "worktree HEAD or branch changed after the scan"
     );
     Ok(())
@@ -267,7 +277,14 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             let listed = git(&p, &["worktree", "list", "--porcelain", "-z"])?;
             let rec = listed
                 .split("\0\0")
-                .find(|r| r.split('\0').next() == Some(&format!("worktree {}", p.display())))
+                .find(|r| {
+                    r.split('\0')
+                        .next()
+                        .and_then(|f| f.strip_prefix("worktree "))
+                        .is_some_and(|registered| {
+                            canonical(Path::new(registered)).is_ok_and(|registered| registered == p)
+                        })
+                })
                 .context("worktree no longer registered")?;
             ensure!(
                 !rec.split('\0').any(|f| f.starts_with("locked")),
@@ -356,10 +373,6 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             ))
         }
         "simulators" => {
-            ensure!(
-                c.managed.contains_key(&item.id),
-                "device not registered as disposable"
-            );
             let id = item
                 .id
                 .strip_prefix("simulators:")
@@ -387,10 +400,6 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             Ok("Deleted disposable simulator and its app data using simctl".into())
         }
         "emulators" => {
-            ensure!(
-                c.managed.contains_key(&item.id),
-                "AVD not registered as disposable"
-            );
             let p = verify_path(item)?;
             let name = item
                 .id
@@ -437,6 +446,12 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
 
 // Reports are plans, never authority to mutate stale resources. Rescan consumers and activity.
 fn revalidate(item: &Item, c: &Config, dir: &Path) -> Result<()> {
+    // Worktree removal already rechecks Git registration, refs, dirty state, PRs,
+    // activity and the complete tree. Do not rescan every unrelated cache/tree.
+    if item.kind == "worktrees" {
+        verify_path(item)?;
+        return Ok(());
+    }
     let (mut report, activity) = inventory::report(c, dir)?;
     let mut state = policy::load_state(dir)?;
     policy::evaluate(
@@ -464,8 +479,10 @@ fn revalidate(item: &Item, c: &Config, dir: &Path) -> Result<()> {
             && current.modified == item.modified
             && current.entries == item.entries
             && (item.kind != "worktrees"
-                || (current.evidence.metadata["head_oid"] == item.evidence.metadata["head_oid"]
-                    && current.evidence.metadata["branch"] == item.evidence.metadata["branch"])),
+                || (current.evidence.metadata.get("head_oid")
+                    == item.evidence.metadata.get("head_oid")
+                    && current.evidence.metadata.get("branch")
+                        == item.evidence.metadata.get("branch"))),
         "resource identity or content changed"
     );
     Ok(())

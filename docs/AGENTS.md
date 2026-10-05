@@ -4,7 +4,7 @@ Use the installed `aigc` executable. Do not copy its deletion logic into shell s
 
 1. Run `aigc status --json`. Inspect `warnings`, `complete`, `status`, and `reason`.
 2. Run builds or foreground sessions through `aigc run -- <command>`. Pins are appropriate for work that must survive between sessions.
-3. Register virtual devices only when their owner has authorized disposal. Regular linked worktrees are automatically eligible after seven days since their latest file write, HEAD commit or detected use.
+3. All implemented adapters are enabled by default. Pin devices or environments that must be retained. Worktrees and Python environments can qualify on the first scan after seven days since their latest write or detected use; worktrees also consider HEAD commit time.
 4. Run `aigc plan --json` to review current decisions. `clean` only acts on eligible resources and rechecks them.
 5. Report actual outcomes from `history`; never add overlapping category sizes into a claimed reclaimed total.
 
@@ -22,7 +22,7 @@ aigc run -- cargo build
 aigc unpin /absolute/path/to/current-task
 ```
 
-Version 0.6 reports schema 2. Read [adapter scope](ADAPTERS.md): some package caches, SDK packages and runtime disks support explicit disposal, while shared/uncertain resources remain protected. Never treat report-only storage as automatically cleanable.
+Version 0.7 reports schema 2. Read [adapter scope](ADAPTERS.md): some package caches, SDK packages and runtime disks support automatic cleanup, while shared/uncertain resources remain protected. Never treat report-only storage as automatically cleanable.
 
 Use `inspect ID` for native usage, ownership, consumers and process evidence. `own ID --owner TASK` records ownership only; `require ID --project PROJECT` protects future requirements. `duplicates` is advisory and never merges environments.
 
