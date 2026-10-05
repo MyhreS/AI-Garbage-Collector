@@ -32,10 +32,15 @@ pub fn install() -> Result<()> {
     fs::write(
         directory().join("aigc.service"),
         format!(
-            "[Unit]\nDescription=AI Garbage Collector\n[Service]\nType=oneshot\nExecStart={} collect\nWorkingDirectory={}\nEnvironment={}\nNice=10\n",
+            "[Unit]\nDescription=AI Garbage Collector\n[Service]\nType=oneshot\nExecStart=:{} collect\nWorkingDirectory={}\nEnvironment={}\nEnvironment={}\nNice=10\n",
             quote(&exe.to_string_lossy()),
             quote(&home().to_string_lossy()),
-            quote(&format!("PATH={path}"))
+            quote(&format!("PATH={path}")),
+            quote(&format!(
+                "XDG_STATE_HOME={}",
+                std::env::var("XDG_STATE_HOME")
+                    .unwrap_or_else(|_| home().join(".local/state").to_string_lossy().into_owned())
+            ))
         ),
     )?;
     fs::write(

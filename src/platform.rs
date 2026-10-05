@@ -159,3 +159,17 @@ pub fn cache_dir(name: &str) -> PathBuf {
             .join(name)
     }
 }
+
+pub fn volume(id: file_id::FileId) -> u64 {
+    match id {
+        file_id::FileId::Inode { device_id, .. } => device_id,
+        file_id::FileId::LowRes {
+            volume_serial_number,
+            ..
+        } => u64::from(volume_serial_number),
+        file_id::FileId::HighRes {
+            volume_serial_number,
+            ..
+        } => volume_serial_number,
+    }
+}

@@ -174,7 +174,10 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                 "not registered as disposable; use aigc manage".into(),
             )
         } else if a.global_reserved {
-            (Status::Protected, "aigc run reserves all resources".into())
+            (
+                Status::Protected,
+                "an active process or reservation protects all resources".into(),
+            )
         } else if a.busy && !worktree {
             (
                 Status::Protected,

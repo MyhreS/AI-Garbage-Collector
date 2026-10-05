@@ -263,7 +263,7 @@ aigc run -- npm run build
 aigc run -- xcodebuild -scheme MyApp build
 ```
 
-`aigc run` reserves all resources by default. Pass repeatable `--resource` IDs or absolute paths and `--owner` for scoped reservations. It creates a separate process group and retains the reservation until the foreground command and inherited background group members finish. Explicitly daemonized processes that escape that group are not tracked: pin their resources. A crashed wrapper leaves a protective reservation; inspect `aigc leases`, then explicitly `aigc release-lease ID` only after its work has ended. A failed child makes the wrapper fail.
+`aigc run` reserves all resources by default. Pass repeatable `--resource` IDs or absolute paths and `--owner` for scoped reservations. On macOS and Ubuntu, it creates a separate process group and retains the reservation until the foreground command and inherited background group members finish. Explicitly daemonized processes that escape that group are not tracked: pin their resources. A crashed wrapper leaves a protective reservation; inspect `aigc leases`, then explicitly `aigc release-lease ID` only after its work has ended. A failed child makes the wrapper fail. On Windows, the reservation stays until explicitly released, including after successful command exit.
 
 ```sh
 aigc run --resource /absolute/path/to/project --owner task-123 -- cargo build
@@ -280,7 +280,7 @@ No MCP server is required. See [agent usage](docs/AGENTS.md) for a short integra
 
 ## Recovery, storage and uninstall
 
-State lives in `~/Library/Application Support/aigc`:
+Use `aigc config path` to find state on your platform (locations are listed above):
 
 - `config.json`: settings, pins and explicitly disposable resources.
 - `state.json`: bounded observation records and last collection time.

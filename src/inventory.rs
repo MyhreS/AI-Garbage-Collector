@@ -160,6 +160,9 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
     if crate::platform::is_link(&root) {
         return (0, 0, 0, false);
     }
+    let Ok(root_id) = crate::platform::file_id(path, &root) else {
+        return (0, 0, 0, false);
+    };
     let mut bytes = 0u64;
     let mut modified = 0;
     let mut count = 0;
@@ -188,6 +191,10 @@ pub fn tree_stats(path: &Path) -> (u64, u64, u64, bool) {
                     complete = false;
                     continue;
                 };
+                if crate::platform::volume(id) != crate::platform::volume(root_id) {
+                    complete = false;
+                    continue;
+                }
                 if inodes.insert(id) {
                     bytes = bytes.saturating_add(crate::platform::bytes(&m));
                 }
