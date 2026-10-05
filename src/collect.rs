@@ -299,11 +299,20 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
             verify_worktree_ref(item, &p)?;
             let path = p.to_str().context("invalid worktree path")?;
+            // Windows keeps a process's working directory open. Run removal
+            // outside the target tree and select its repository explicitly.
+            let common = git(
+                &p,
+                &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            )?;
+            let mut args = vec!["--git-dir", common.trim(), "worktree", "remove"];
             if dirty {
-                git(&p, &["worktree", "remove", "--force", "--", path])?;
-            } else {
-                git(&p, &["worktree", "remove", "--", path])?;
+                args.push("--force");
             }
+            args.extend(["--", path]);
+            // Removing large dependency trees can legitimately exceed the
+            // short timeout used for read-only Git metadata queries.
+            crate::runtime::command_at("git", &args, Some(&home()), 3600)?;
             Ok(if dirty {
                 "Force-removed idle worktree and discarded tracked edits, untracked and ignored files; named branch retained if present; no recovery archive"
             } else {
