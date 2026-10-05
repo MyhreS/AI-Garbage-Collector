@@ -296,7 +296,6 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
         "worktree-cleanup" => c.worktree_cleanup = value.parse()?,
         "worktree-force" => c.worktree_force = value.parse()?,
         "worktree-require-pr-verification" => c.worktree_require_pr_verification = value.parse()?,
-        "budget.package-cache" => c.cache_budget_bytes = config::bytes(value)?,
         "maintenance-cooldown-days" => c.maintenance_cooldown_days = value.parse()?,
         "deep-inventory" => c.deep_inventory = value.parse()?,
         "roots" => {
@@ -304,7 +303,7 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
                 .context("roots must be a JSON array of absolute paths")?
         }
         _ => bail!(
-            "unknown setting; use retention-days, pressure-retention-days, min-free-space, worktree-cleanup, worktree-force, worktree-require-pr-verification, budget.package-cache, maintenance-cooldown-days, deep-inventory, or roots"
+            "unknown setting; use retention-days, pressure-retention-days, min-free-space, worktree-cleanup, worktree-force, worktree-require-pr-verification, maintenance-cooldown-days, deep-inventory, or roots"
         ),
     }
     c.validate()

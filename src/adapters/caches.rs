@@ -42,7 +42,7 @@ pub fn scan(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
                 i.evidence
                     .metadata
                     .insert("manager".into(), Value::String(manager.into()));
-                i.evidence.reconstruction = "Native cache maintenance can cause later downloads or rebuilds; age, size budget and cooldown checks apply.".into();
+                i.evidence.reconstruction = "Native cache maintenance can cause later downloads or rebuilds; age and cooldown checks apply.".into();
                 if root.is_symlink() || !root.starts_with(home()) {
                     i.protection = Some("shared or external cache location".into());
                 }

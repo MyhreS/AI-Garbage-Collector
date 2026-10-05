@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 11;
+pub const POLICY_VERSION: u32 = 12;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -186,11 +186,6 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             (
                 Status::Protected,
                 "a build or agent process is running; collection deferred".into(),
-            )
-        } else if i.kind == "package-caches" && i.bytes <= c.cache_budget_bytes {
-            (
-                Status::Protected,
-                "cache is within its configured budget".into(),
             )
         } else if i.idle_seconds < days * 86400 {
             (

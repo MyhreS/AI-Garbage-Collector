@@ -62,7 +62,7 @@ Cleanup passes have no item-count or byte cap. Skipped resources do not stop lat
 | Recognized dependencies and build output | Remove eligible `node_modules`, Rust/Swift/Next.js output and Xcode DerivedData after observed inactivity; protect tracked source. |
 | Python/Poetry environments | Automatically remove after 7 days since the latest file write or detected use, including the first scan. Orphaned Poetry environments are included. |
 | Devices, runtimes, SDKs | Automatically collect eligible resources after activity and dependency checks. Xcode/iOS support is macOS-only. |
-| pip, pnpm and npm caches | Automatic native maintenance above the configured cache budget. |
+| pip, pnpm and npm caches | Automatic native maintenance after inactivity and cooldown checks, regardless of cache size. |
 | Other manager caches, browsers, Xcode archives and recovery bundles | Report only or protected. |
 
 Custom scratch paths require registration for discovery. Other filesystem resources require **7 days of observed inactivity**. Storage figures are estimates. Docker is unsupported. The app does not deduplicate environments, archive agent chats, sweep personal files or manage remote machines.

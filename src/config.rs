@@ -39,7 +39,9 @@ pub struct Config {
     pub owners: BTreeMap<String, String>,
     pub requirements: BTreeMap<String, Vec<String>>,
     pub registered: Vec<Registration>,
-    pub cache_budget_bytes: u64,
+    // Accept old settings without enforcing or preserving the removed size threshold.
+    #[serde(rename = "cache_budget_bytes", skip_serializing)]
+    legacy_cache_budget_bytes: Option<u64>,
     pub maintenance_cooldown_days: u64,
     pub deep_inventory: bool,
 }
@@ -71,7 +73,7 @@ impl Default for Config {
             owners: BTreeMap::new(),
             requirements: BTreeMap::new(),
             registered: vec![],
-            cache_budget_bytes: 5 * GIB,
+            legacy_cache_budget_bytes: None,
             maintenance_cooldown_days: 7,
             deep_inventory: true,
         }

@@ -139,7 +139,7 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | Android AVDs | Yes | Eligible idle AVDs; requires `avdmanager`; defers while any emulator is running |
 | iOS simulator runtimes | Native disk registration, build and retained devices | Eligible runtimes with no retained devices; supported native schema required |
 | Android SDK packages | Installed package IDs, AVD references and simple Gradle declarations | Eligible packages; unresolved Gradle requirements protect packages |
-| pip, pnpm, npm caches | Manager-configured paths | Automatic native purge/prune/verify after observed inactivity, size budget and cooldown |
+| pip, pnpm, npm caches | Manager-configured paths | Automatic native purge/prune/verify after observed inactivity and cooldown, regardless of size |
 | uv, Poetry, Cargo, Gradle, Yarn, Bun storage | Configured or documented locations; scope varies by adapter | **Report only**; native ownership/retention can span resources |
 | Playwright browsers, npx installations | Revisions/installations and available package references | **Report only**; keep native ownership controls |
 | Homebrew cache | Configured cache path and native cleanup preview | **Report only**; native cleanup also affects installed versions |
@@ -180,7 +180,6 @@ The terminal installers and Homebrew Brewfile start the service immediately. Eac
 | Inactivity when available space is below the target | 7 days |
 | Free-space target | 20 GiB |
 | Removal per pass | No item-count or byte cap; every eligible action is revalidated and attempted. Skipped items do not stop later candidates. |
-| Opt-in package-cache budget | 5 GiB per reported cache |
 | Maintenance/recollection cooldown | 7 days |
 | Schedule | Every hour while your user session is logged in; also when loaded |
 
@@ -212,7 +211,6 @@ aigc config set pressure-retention-days 3
 aigc config set worktree-cleanup false
 aigc config set worktree-force false
 aigc config set worktree-require-pr-verification true
-aigc config set budget.package-cache 5GB
 aigc config set maintenance-cooldown-days 7
 aigc config set deep-inventory true
 aigc config set roots '["/Users/me/Projects", "/Users/me/other-repository"]'
@@ -317,3 +315,5 @@ All GitHub Actions workflows are manually triggered. Builds produce macOS, Windo
 MIT licensed. Contributions that improve activity detection, tool compatibility and recovery are welcome.
 
 Legacy `max_delete_bytes_per_run` settings are accepted but ignored and omitted when configuration is saved. Legacy `backup_budget_bytes` is also accepted but ignored and omitted when configuration is saved; no recovery archives are created.
+
+Legacy `cache_budget_bytes` settings are accepted but ignored and omitted when configuration is saved. Cache size does not affect eligibility.

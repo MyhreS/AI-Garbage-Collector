@@ -52,7 +52,7 @@ This does not enumerate every environment on the whole disk, execute environment
 | Playwright | Default/custom browser path, revisions and available package links | Report-only; keep Playwright's native package-aware GC |
 | npx | Installation directories under configured npm cache | Report-only; arbitrary tool use cannot be inferred from age |
 
-Supported native maintenance requires cache size above `budget.package-cache`, observed inactivity and the configured cooldown. Pins inside a cache protect its containing resource. Native paths are queried again immediately before maintenance. A successful operation is recorded as maintenance, not a claim that the whole cache was deleted.
+Supported native maintenance requires observed inactivity and the configured cooldown, regardless of cache size. Pins inside a cache protect its containing resource. Native paths are queried again immediately before maintenance. A successful operation is recorded as maintenance, not a claim that the whole cache was deleted.
 
 No cache manager is installed automatically. A manager's default path is not proof that every project uses that path. Do not mark a shared cache disposable if an untracked consumer relies on its exact contents or offline availability.
 
