@@ -262,13 +262,6 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 "worktree has local files and force removal is disabled"
             );
             crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
-            ensure!(
-                !p.components().any(|p| matches!(
-                    p.as_os_str().to_str(),
-                    Some(".codex" | ".codex-workspaces")
-                )),
-                "use the owning application's archive tool"
-            );
             let listed = git(&p, &["worktree", "list", "--porcelain", "-z"])?;
             let rec = listed
                 .split("\0\0")

@@ -454,15 +454,6 @@ fn discover_projects(
                             Err(e) => i.protection = Some(e.to_string()),
                         }
                     }
-                    // App-managed trees must be archived by their owning application.
-                    if path.components().any(|p| {
-                        matches!(p.as_os_str().to_str(), Some(".codex" | ".codex-workspaces"))
-                    }) {
-                        i.protection = Some(
-                            "application-managed worktree; archive through its owning application"
-                                .into(),
-                        );
-                    }
                     let latest_write_or_commit = i.modified.max(
                         i.evidence.metadata["head_committed_at"]
                             .as_u64()

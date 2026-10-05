@@ -56,7 +56,7 @@ rm /tmp/aigc-install.sh
 
 The installer verifies the release archive's SHA-256 checksum, installs `~/.local/bin/aigc`, and starts an hourly per-user LaunchAgent. It prints the full executable path if `~/.local/bin` is not on your `PATH`. It does not request administrator access or edit your shell startup files.
 
-Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.4.1` to select a particular release.
+Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.4.2` to select a particular release.
 
 ### Build and install from source
 
@@ -108,7 +108,7 @@ Counts are resource counts, not agent/session counts. Detailed Docker cache entr
 | Python / Poetry project environments | Project associations, interpreter metadata, matching-input candidates | Explicitly disposable, unshared environments only; linked environments and installed tools protected |
 | Rust `target`, Swift `.build`, Next.js `.next` | Yes | Recognized project folders only; refuses Git-tracked files |
 | Regular Git linked worktrees | Yes | Automatic after seven days since the latest file write, HEAD commit or detected use, including on the first scan. Dirty trees are force-removed with no recovery of local files. Clean trees require a verified HEAD recovery bundle. Open GitHub PRs are protected. |
-| App-managed worktrees under `.codex` / `.codex-workspaces` | Yes | **Protected.** Use the owning application's archive tool; aigc does not edit its session database |
+| Codex worktrees under `.codex` / `.codex-workspaces` | Yes | Same seven-day policy as other linked worktrees; native Git removal, without a Codex snapshot or chat archival |
 | Docker build cache | Per-record metadata from running local single-node Buildx builders | Exact-ID native Buildx pruning; private immutable regular records only, native age filter and storage setting |
 | Docker images | Yes | Only images explicitly registered disposable; native removal without force |
 | iOS simulator devices | Yes | Only registered disposable, shut-down devices; deletes app data through `simctl` |
@@ -239,11 +239,11 @@ aigc manage 'docker-images:sha256:FULL-IMAGE-ID' --owner task-123
 aigc unmanage 'emulators:throwaway-pixel'
 ```
 
-Registration authorizes disposal after policy checks for images and devices. Regular linked worktrees need no registration. They still honor pins, activity checks, open-PR checks and app-managed worktree protection. For devices/images, register only data you are willing to lose. Inventory still works without registration.
+Registration authorizes disposal after policy checks for images and devices. Regular linked worktrees need no registration. They still honor aigc pins, activity checks and open-PR checks. For devices/images, register only data you are willing to lose. Inventory still works without registration.
 
 For an eligible regular Git worktree, `aigc` uses [GitHub CLI](https://cli.github.com/manual/) to check open PRs in the checkout repository and its fork parent. Named branches use their branch name; detached checkouts use PRs associated with the HEAD commit. A detected open PR protects the worktree. **By default, a missing GitHub CLI, failed authentication or failed lookup does not block an otherwise eligible seven-day-old worktree.** The report labels unavailable verification. Set `worktree-require-pr-verification true` to retain worktrees whenever this check fails. Checks run during inventory and before removal. Commit associations and repository discovery cannot identify every related PR, especially PRs targeting unrelated repositories; pin those worktrees.
 
-Codex-managed trees stay protected in aigc. Use Codex’s worktree cleanup settings to lower its retained-worktree limit, or archive completed chats. Codex saves a recovery snapshot and protects pinned, running and permanent worktrees; see [OpenAI’s worktree documentation](https://learn.chatgpt.com/docs/environments/git-worktrees). aigc does not rewrite Codex’s private state or directly remove its managed folders.
+Codex-managed linked worktrees use the same cleanup policy as other linked worktrees. aigc removes eligible trees through Git without creating a Codex snapshot or archiving their chats. Codex may retain chats pointing to a removed folder. **Codex chat pins, chat recency and permanent-worktree settings are not read by aigc.** Use `aigc pin PATH` or `aigc run` reservations to protect work between sessions; process activity and filesystem age remain checked. The collector does not delete Codex conversation logs, credentials or its state database.
 
 ## Use it from an agent
 

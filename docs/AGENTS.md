@@ -10,7 +10,7 @@ Use the installed `aigc` executable. Do not copy its deletion logic into shell s
 
 Use `config set` to change policy on the user's behalf. Do not edit `state.json` to manufacture old observations. Do not disable protection to force a free-space target.
 
-A resource protected as application-managed needs its owning app's archive operation. A locked, active, unknown or pinned resource is not disposable merely because a task completed. Eligible regular worktrees with modified, untracked or ignored files are force-removed with no recovery of those files. Pin or reserve work that must remain available.
+Codex-managed linked worktrees follow the normal seven-day policy. Cleanup does not archive their chats or create Codex recovery snapshots. A locked, active, unknown or pinned resource is not disposable merely because a task completed. Eligible regular worktrees with modified, untracked or ignored files are force-removed with no recovery of those files. Pin or reserve work that must remain available.
 
 Examples:
 

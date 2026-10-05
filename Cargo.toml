@@ -1,6 +1,6 @@
 [package]
 name = "aigc"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 description = "A local garbage collector for development storage on macOS"
 license = "MIT"
