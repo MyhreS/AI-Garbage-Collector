@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 10;
+pub const POLICY_VERSION: u32 = 11;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -66,10 +66,13 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         let worktree = i.kind == "worktrees";
         let filesystem_age = worktree || i.kind == "python";
         let signature_changed = o.signature != signature;
+        // Inventory signatures include representation details (such as file-ID
+        // formatting) that can change on upgrade without any filesystem use.
+        // Filesystem-aged resources already use native write/commit timestamps;
+        // only activity or a protecting consumer establishes observed use.
         if i.active
             || a.touches(i.path.as_deref())
-            || (filesystem_age
-                && (signature_changed || i.evidence.consumers.iter().any(|r| r.protects)))
+            || (filesystem_age && i.evidence.consumers.iter().any(|r| r.protects))
         {
             o.last_used = Some(time);
         }
