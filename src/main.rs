@@ -63,7 +63,7 @@ enum Commands {
         #[arg(long)]
         project: String,
     },
-    /// Register a disposable generated directory with an owner, purpose and minimum retention.
+    /// Register a disposable generated directory with an owner and purpose.
     Register {
         path: PathBuf,
         #[arg(long, value_parser = ["scratch", "builds", "python"])]
@@ -72,8 +72,6 @@ enum Commands {
         owner: String,
         #[arg(long)]
         purpose: String,
-        #[arg(long, default_value_t = 30)]
-        retain_days: u64,
     },
     /// Remove custom directory discovery. Recognized resources remain automatically managed.
     Unregister { path: PathBuf },
@@ -424,12 +422,7 @@ fn run() -> Result<()> {
             kind,
             owner,
             purpose,
-            retain_days,
         } => {
-            ensure!(
-                (1..=3650).contains(&retain_days),
-                "retention must be 1..3650 days"
-            );
             let path = aigc::platform::normalize(fs::canonicalize(path)?);
             aigc::adapters::disposable_path(&path, &kind)?;
             c.registered.retain(|r| r.path != path);
@@ -438,7 +431,7 @@ fn run() -> Result<()> {
                 kind,
                 owner,
                 purpose,
-                retain_until: runtime::now() + retain_days * 86400,
+                legacy_retain_until: None,
             });
             c.save(&dir)?;
             output(&c.registered)

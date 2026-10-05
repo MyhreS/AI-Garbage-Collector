@@ -143,7 +143,7 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | uv, Poetry, Cargo, Gradle, Yarn, Bun storage | Configured or documented locations; scope varies by adapter | **Report only**; native ownership/retention can span resources |
 | Playwright browsers, npx installations | Revisions/installations and available package references | **Report only**; keep native ownership controls |
 | Homebrew cache | Configured cache path and native cleanup preview | **Report only**; native cleanup also affects installed versions |
-| Registered scratch/custom build output | Explicit owner, purpose and retention deadline | Opt-in disposable directories after path, source and activity checks |
+| Registered scratch/custom build output | Explicit owner and purpose | Opt-in disposable directories after path, source and activity checks |
 | Xcode release archives | Yes | **Always protected** |
 | Legacy recovery bundles | Yes | **Always protected; user-managed retention** |
 | Databases, credentials, signing keys, personal files | Not a general-purpose inventory | **Never targeted** |
@@ -265,11 +265,11 @@ aigc run -- xcodebuild -scheme MyApp build
 ```sh
 aigc run --resource /absolute/path/to/project --owner task-123 -- cargo build
 aigc register /absolute/path/to/project/package-staging --kind scratch \
-  --owner task-123 --purpose 'Disposable packaging output' --retain-days 30
+  --owner task-123 --purpose 'Disposable packaging output'
 aigc unregister /absolute/path/to/project/package-staging
 ```
 
-Registration is explicit permission to dispose of generated contents after its minimum deadline and the normal observation period. It cannot authorize tracked source, nested Git repositories, protected application state or personal folders.
+Registration is explicit permission to dispose of generated contents after the normal inactivity period. It cannot authorize tracked source, nested Git repositories, protected application state or personal folders.
 
 On macOS and Ubuntu, collection uses `lsof`, process inspection, device state, filesystem observations and native Git checks. For regular worktrees, it checks for open files and working directories in that tree, scoped reservations and global `aigc run` reservations; a recognized process elsewhere does not block cleanup of an unrelated worktree. Other categories defer while recognized builds or agents run. **These are best-effort signals, not proof that an arbitrary paused agent is finished.** External tools do not take aigc's lock, so a process can start between inspection and deletion. Use reservations and pins for important work. aigc's own commands serialize state updates and collection with a lock.
 
@@ -317,3 +317,5 @@ MIT licensed. Contributions that improve activity detection, tool compatibility 
 Legacy `max_delete_bytes_per_run` settings are accepted but ignored and omitted when configuration is saved. Legacy `backup_budget_bytes` is also accepted but ignored and omitted when configuration is saved; no recovery archives are created.
 
 Legacy `cache_budget_bytes` settings are accepted but ignored and omitted when configuration is saved. Cache size does not affect eligibility.
+
+Registered folders have no separate retention deadline. Legacy `retain_until` values are accepted but ignored and omitted when configuration is saved.

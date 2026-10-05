@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 12;
+pub const POLICY_VERSION: u32 = 13;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -112,10 +112,6 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             .map(|r| format!("required by {} ({})", r.id, r.source))
             .collect::<Vec<_>>();
         i.evidence.blockers.extend(referenced.clone());
-        let registered = c
-            .registered
-            .iter()
-            .find(|r| i.path.as_ref() == Some(&r.path));
         let cooldown = s
             .maintenance
             .get(&i.id)
@@ -146,11 +142,6 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             )
         } else if let Some(reason) = referenced.first() {
             (Status::Protected, reason.clone())
-        } else if registered.is_some_and(|r| time < r.retain_until) {
-            (
-                Status::Protected,
-                "registered retention deadline has not passed".into(),
-            )
         } else if cooldown {
             (
                 Status::Protected,

@@ -13,7 +13,9 @@ pub struct Registration {
     pub kind: String,
     pub owner: String,
     pub purpose: String,
-    pub retain_until: u64,
+    // Accept old registrations without enforcing their extra retention deadline.
+    #[serde(default, rename = "retain_until", skip_serializing)]
+    pub legacy_retain_until: Option<u64>,
 }
 
 pub const GIB: u64 = 1024 * 1024 * 1024;

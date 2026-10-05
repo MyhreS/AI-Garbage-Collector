@@ -66,10 +66,10 @@ Use explicit registration for disposable packaging output, temporary downloads a
 
 ```sh
 aigc register /Users/me/Projects/task/package-staging --kind scratch \
-  --owner task-123 --purpose 'Rebuildable packaging output' --retain-days 30
+  --owner task-123 --purpose 'Rebuildable packaging output'
 ```
 
-Supported kinds are `scratch`, `builds` and `python`. Registration records owner, purpose and minimum retention deadline. It authorizes generated-content disposal only. Home roots, recognized sensitive/application/personal locations, tracked source, nested repositories, noncanonical paths and incomplete scans are refused. A registered Python path must contain `pyvenv.cfg`. A regular linked Git worktree is handled by the worktree policy above.
+Supported kinds are `scratch`, `builds` and `python`. Registration records owner and purpose; normal inactivity rules apply with no additional retention deadline. It authorizes generated-content disposal only. Home roots, recognized sensitive/application/personal locations, tracked source, nested repositories, noncanonical paths and incomplete scans are refused. A registered Python path must contain `pyvenv.cfg`. A regular linked Git worktree is handled by the worktree policy above.
 
 `unregister PATH` withdraws this registration. `unmanage ID` clears its managed owner label. Use `pin ID` to prevent automatic cleanup of recognized resources.
 

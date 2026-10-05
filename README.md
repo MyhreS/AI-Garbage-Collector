@@ -65,7 +65,7 @@ Cleanup passes have no item-count or byte cap. Skipped resources do not stop lat
 | pip, pnpm and npm caches | Automatic native maintenance after inactivity and cooldown checks, regardless of cache size. |
 | Other manager caches, browsers, Xcode archives and recovery bundles | Report only or protected. |
 
-Custom scratch paths require registration for discovery. Other filesystem resources require **7 days of observed inactivity**. Storage figures are estimates. Docker is unsupported. The app does not deduplicate environments, archive agent chats, sweep personal files or manage remote machines.
+Custom scratch paths require registration for discovery, with no extra retention deadline. Other filesystem resources require **7 days of observed inactivity**. Storage figures are estimates. Docker is unsupported. The app does not deduplicate environments, archive agent chats, sweep personal files or manage remote machines.
 
 Inventory-format changes do not restart the worktree or Python environment inactivity timer. Activity detection is best effort. Running agents elsewhere do not block worktree cleanup. **Windows** detects running environment interpreters but lacks general per-file activity attribution; `aigc run` reservations need explicit release. Codex chat pins are not read—use `aigc pin` to preserve a worktree.
 
