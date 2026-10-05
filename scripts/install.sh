@@ -21,6 +21,6 @@ tar -xzf "$scratch/$asset" -C "$scratch" aigc
 mkdir -p "$HOME/.local/bin"
 install -m 755 "$scratch/aigc" "$HOME/.local/bin/aigc"
 "$HOME/.local/bin/aigc" service install
-printf '\nInstalled. The hourly collector is running with conservative defaults.\n'
+printf '\nInstalled. The hourly collector is running. Regular linked worktrees idle for seven days can be force-removed, including local files, without recovery.\n'
 printf 'Status: %s/.local/bin/aigc status\n' "$HOME"
 printf 'If needed, add %s/.local/bin to your PATH.\n' "$HOME"
