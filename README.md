@@ -63,7 +63,7 @@ aigc service status            # Check the background scheduler
 
 Other filesystem resources require **7 days of observed inactivity**. Storage figures are estimates. Docker is unsupported. The app does not deduplicate environments, archive agent chats, sweep personal files or manage remote machines.
 
-Activity detection is best effort. On **Windows**, recognized developer processes pause the entire cleanup pass; `aigc run` reservations need explicit release. Codex chat pins are not read—use `aigc pin` to preserve a worktree.
+Activity detection is best effort. Running agents elsewhere do not block worktree cleanup. **Windows** lacks per-file activity attribution; `aigc run` reservations need explicit release. Codex chat pins are not read—use `aigc pin` to preserve a worktree.
 
 ## Documentation
 

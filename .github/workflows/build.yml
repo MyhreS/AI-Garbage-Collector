@@ -17,7 +17,7 @@ env:
 jobs:
   check:
     name: Formatting and production lint
-    runs-on: macos-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:

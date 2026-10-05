@@ -642,8 +642,9 @@ pub fn activity(state_dir: &Path) -> Activity {
         ..Default::default()
     };
     if let Ok(names) = names {
-        // Windows has no lsof equivalent built in. Without per-directory attribution,
-        // any recognized developer process reserves the entire cleanup pass.
+        // Process names cannot associate an agent with a particular worktree.
+        // Keep the existing busy signal for non-worktree categories only;
+        // a global reservation must come from an explicit aigc run lease.
         a.busy = names.lines().any(|n| {
             let n = n.trim().to_ascii_lowercase();
             [
@@ -654,7 +655,6 @@ pub fn activity(state_dir: &Path) -> Activity {
             .iter()
             .any(|p| n == *p || n.starts_with(&format!("{p}-")))
         });
-        a.global_reserved = a.busy;
     }
     crate::leases::apply(state_dir, &mut a);
     a

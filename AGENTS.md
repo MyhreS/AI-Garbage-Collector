@@ -4,6 +4,7 @@ Read README.md before changing cleanup behavior. This is a standalone local macO
 
 - Treat uncertain ownership or activity as protected, never as permission to delete.
 - Use native Git and device-management commands for their resources.
+- Do not block worktree cleanup just because agents or builds run elsewhere. Keep the configured seven-day inactivity policy and detected open-PR protection.
 - Preserve user work, pinned resources and other tasks' files.
 - Do not add or run tests unless the user explicitly requests them. Do not trigger tests through CI or release workflows.
 - Keep the README coverage table and CLI help accurate. Do not advertise report-only categories as automatic cleanup.

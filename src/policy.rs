@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 8;
+pub const POLICY_VERSION: u32 = 9;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -176,7 +176,7 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         } else if a.global_reserved {
             (
                 Status::Protected,
-                "an active process or reservation protects all resources".into(),
+                "an explicit aigc run reservation protects all resources".into(),
             )
         } else if a.busy && !worktree {
             (
