@@ -180,7 +180,7 @@ The terminal installers and Homebrew Brewfile start the service immediately. Eac
 | Inactivity when available space is below the target | 7 days |
 | Free-space target | 20 GiB |
 | Clean-worktree recovery bundle budget | 2 GiB; further clean-worktree removal stops when it would be exceeded |
-| Estimated removal limit per pass | 50 GiB; at most 10 eligible actions, with complete revalidation per action |
+| Removal per pass | No item-count or byte cap; every eligible action is revalidated and attempted. Skipped items do not stop later candidates. |
 | Opt-in package-cache budget | 5 GiB per reported cache |
 | Maintenance/recollection cooldown | 7 days |
 | Schedule | Every hour while your user session is logged in; also when loaded |
@@ -211,7 +211,6 @@ aigc config set min-free-space 25GB
 aigc config set budget.backups 2GB
 aigc config set retention-days 14
 aigc config set pressure-retention-days 3
-aigc config set max-delete-per-run 20GB
 aigc config set worktree-cleanup false
 aigc config set worktree-force false
 aigc config set worktree-require-pr-verification true
@@ -323,3 +322,5 @@ This repository contains no test suite or test-only dependencies. CI and release
 All GitHub Actions workflows are manually triggered. Builds produce macOS, Windows and Ubuntu archives. The manual release workflow publishes those archives and `SHA256SUMS`; pushing a tag does not start it. A failed build prevents publishing. See [release instructions](RELEASING.md).
 
 MIT licensed. Contributions that improve activity detection, tool compatibility and recovery are welcome.
+
+Legacy `max_delete_bytes_per_run` settings are accepted but ignored and omitted when configuration is saved. The separate clean-worktree recovery budget still applies.

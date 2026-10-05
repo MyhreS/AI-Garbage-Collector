@@ -28,7 +28,9 @@ pub struct Config {
     pub worktree_cleanup: bool,
     pub worktree_force: bool,
     pub worktree_require_pr_verification: bool,
-    pub max_delete_bytes_per_run: u64,
+    // Accept old configuration files without retaining or enforcing the removed cap.
+    #[serde(rename = "max_delete_bytes_per_run", skip_serializing)]
+    legacy_max_delete_bytes_per_run: Option<u64>,
     pub paused_until: u64,
     pub pins: Vec<String>,
     pub managed: BTreeMap<String, String>,
@@ -60,7 +62,7 @@ impl Default for Config {
             worktree_cleanup: true,
             worktree_force: true,
             worktree_require_pr_verification: false,
-            max_delete_bytes_per_run: 50 * GIB,
+            legacy_max_delete_bytes_per_run: None,
             paused_until: 0,
             pins: vec![],
             managed: BTreeMap::new(),
@@ -83,9 +85,6 @@ impl Config {
             bail!(
                 "retention must be 1..3650 days; pressure retention cannot exceed normal retention"
             );
-        }
-        if self.max_delete_bytes_per_run == 0 {
-            bail!("max_delete_bytes_per_run must be positive");
         }
         if self.maintenance_cooldown_days == 0 || self.maintenance_cooldown_days > 3650 {
             bail!("maintenance cooldown must be 1..3650 days");

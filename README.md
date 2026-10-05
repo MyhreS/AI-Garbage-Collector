@@ -44,12 +44,15 @@ Remove-Item "$env:TEMP\aigc-install.ps1"
 aigc status                     # Counts, sizes, activity and eligibility
 aigc status worktrees --refresh # Fresh worktree inventory
 aigc status --json              # Structured inventory and scan timings
+aigc clean                      # Scan now and process all eligible resources
 aigc clean --dry-run            # Preview cleanup
 aigc pin /absolute/path         # Keep a resource
 aigc pause 2h                   # Temporarily pause cleanup
 aigc config show                # View settings
 aigc service status            # Check the background scheduler
 ```
+
+Cleanup passes have no item-count or byte cap. Skipped resources do not stop later candidates.
 
 ## Cleanup scope
 

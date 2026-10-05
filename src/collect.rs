@@ -62,13 +62,7 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
         "automatic cleanup requires macOS, Linux or Windows"
     );
     let mut results = vec![];
-    let mut removed = 0u64;
-    for item in report
-        .items
-        .iter()
-        .filter(|i| i.status == Status::Eligible)
-        .take(10)
-    {
+    for item in report.items.iter().filter(|i| i.status == Status::Eligible) {
         // Revalidate activity immediately before each action, while holding the shared lock.
         let activity = inventory::activity(dir);
         let reserved = activity.reserved.iter().any(|id| {
@@ -86,8 +80,6 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
             || activity.touches(item.path.as_deref())
         {
             Some("activity or reservation changed; deferred")
-        } else if item.bytes > c.max_delete_bytes_per_run.saturating_sub(removed) {
-            Some("per-pass removal budget reached")
         } else {
             None
         };
@@ -105,7 +97,6 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
         );
         let (outcome, detail, estimate) = match result {
             Ok(detail) => {
-                removed = removed.saturating_add(item.bytes);
                 let outcome = if maintenance && native_reclaimed == Some(0) {
                     "no_op"
                 } else if maintenance {
