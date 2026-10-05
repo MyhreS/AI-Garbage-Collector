@@ -8,9 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::hash_map::DefaultHasher,
     fs,
-    hash::{Hash, Hasher},
     path::{Path, PathBuf},
 };
 
@@ -281,87 +279,36 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 !rec.split('\0').any(|f| f.starts_with("locked")),
                 "worktree is locked"
             );
-            if dirty {
-                let activity = inventory::activity(dir);
-                ensure!(
-                    activity.reliable
-                        && !activity.global_reserved
-                        && !activity.touches(Some(&p))
-                        && !activity.reserved.iter().any(|id| {
-                            id == &item.id
-                                || (Path::new(id).is_absolute()
-                                    && (p.starts_with(id) || Path::new(id).starts_with(&p)))
-                        }),
-                    "worktree became active or reserved"
-                );
-                verify_path(item)?;
-                ensure!(
-                    inventory::worktree_removable(&p)?,
-                    "worktree status changed before force removal"
-                );
-                crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
-                verify_worktree_ref(item, &p)?;
-                git(
-                    &p,
-                    &["worktree", "remove", "--force", "--", p.to_str().unwrap()],
-                )?;
-                return Ok(
-                    "Force-removed idle worktree and discarded tracked edits, untracked and ignored files; named branch retained if present; detached commits have no recovery archive"
-                        .into(),
-                );
-            }
-            let backup = dir.join("backups");
-            fs::create_dir_all(&backup)?;
-            let mut hash = DefaultHasher::new();
-            item.id.hash(&mut hash);
-            let bundle = backup.join(format!("{}-{:x}.bundle", now(), hash.finish()));
-            let bundle_str = bundle.to_str().context("invalid backup path")?;
-            let existing = inventory::tree_stats(&backup).0;
-            let objects = git(&p, &["count-objects", "-v"])?;
-            let object_kib: u64 = objects
-                .lines()
-                .filter_map(|line| {
-                    line.strip_prefix("size: ")
-                        .or_else(|| line.strip_prefix("size-pack: "))
-                        .and_then(|n| n.parse::<u64>().ok())
-                })
-                .sum();
-            let allowance = object_kib
-                .saturating_mul(2048)
-                .saturating_add(16 * 1024 * 1024);
+            let activity = inventory::activity(dir);
             ensure!(
-                existing.saturating_add(allowance) <= c.backup_budget_bytes,
-                "recovery storage budget would be exceeded; review backups or increase budget.backups"
+                activity.reliable
+                    && !activity.global_reserved
+                    && !activity.touches(Some(&p))
+                    && !activity.reserved.iter().any(|id| {
+                        id == &item.id
+                            || (Path::new(id).is_absolute()
+                                && (p.starts_with(id) || Path::new(id).starts_with(&p)))
+                    }),
+                "worktree became active or reserved"
             );
+            verify_path(item)?;
             ensure!(
-                crate::runtime::disk(&backup)?.1 > allowance.saturating_add(100 * 1024 * 1024),
-                "insufficient free space to safely create recovery bundle"
+                inventory::worktree_removable(&p)? == dirty,
+                "worktree status changed before removal"
             );
-            let result = (|| -> Result<()> {
-                git(&p, &["bundle", "create", bundle_str, "HEAD"])?;
-                git(&p, &["bundle", "verify", bundle_str])?;
-                crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
-                ensure!(
-                    existing.saturating_add(fs::metadata(&bundle)?.len()) <= c.backup_budget_bytes,
-                    "recovery bundle exceeds storage budget"
-                );
-                fs::File::open(&bundle)?.sync_all()?;
-                Ok(())
-            })();
-            if let Err(e) = result {
-                let _ = fs::remove_file(&bundle);
-                return Err(e);
-            }
-            ensure!(
-                !inventory::worktree_removable(&p)?,
-                "worktree changed after recovery bundle"
-            );
+            crate::github::ensure_no_open_pr(&p, c.worktree_require_pr_verification)?;
             verify_worktree_ref(item, &p)?;
-            git(&p, &["worktree", "remove", "--", p.to_str().unwrap()])?;
-            Ok(format!(
-                "Git HEAD history saved to {}; branch retained",
-                bundle.display()
-            ))
+            let path = p.to_str().context("invalid worktree path")?;
+            if dirty {
+                git(&p, &["worktree", "remove", "--force", "--", path])?;
+            } else {
+                git(&p, &["worktree", "remove", "--", path])?;
+            }
+            Ok(if dirty {
+                "Force-removed idle worktree and discarded tracked edits, untracked and ignored files; named branch retained if present; no recovery archive"
+            } else {
+                "Removed idle clean worktree; named branch retained if present; no recovery archive"
+            }.into())
         }
         "simulators" => {
             let id = item

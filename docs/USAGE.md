@@ -133,7 +133,7 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | `node_modules` | Yes | Recognized project folders only; refuses Git-tracked files |
 | Python / Poetry project environments | Project associations, interpreter metadata, matching-input candidates | Automatic after 7 days since the latest write or detected use, including orphaned Poetry environments; shared/linked environments and installed tools protected |
 | Rust `target`, Swift `.build`, Next.js `.next` | Yes | Recognized project folders only; refuses Git-tracked files |
-| Regular Git linked worktrees | Yes | Automatic after seven days since the latest file write, HEAD commit or detected use, including on the first scan. Dirty trees are force-removed with no recovery of local files. Clean trees require a verified HEAD recovery bundle. Open GitHub PRs are protected. |
+| Regular Git linked worktrees | Yes | Automatic after seven days since the latest file write, HEAD commit or detected use, including on the first scan. Dirty trees are force-removed with no recovery of local files. Clean trees are also removed without recovery archives. Open GitHub PRs are protected. |
 | Codex worktrees under `.codex` / `.codex-workspaces` | Yes | Same seven-day policy as other linked worktrees; native Git removal, without a Codex snapshot or chat archival |
 | iOS simulator devices | Yes | Eligible shut-down devices; deletes app data through `simctl` |
 | Android AVDs | Yes | Eligible idle AVDs; requires `avdmanager`; defers while any emulator is running |
@@ -145,7 +145,7 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | Homebrew cache | Configured cache path and native cleanup preview | **Report only**; native cleanup also affects installed versions |
 | Registered scratch/custom build output | Explicit owner, purpose and retention deadline | Opt-in disposable directories after path, source and activity checks |
 | Xcode release archives | Yes | **Always protected** |
-| Recovery bundles created by aigc | Yes | **Always protected; user-managed retention** |
+| Legacy recovery bundles | Yes | **Always protected; user-managed retention** |
 | Databases, credentials, signing keys, personal files | Not a general-purpose inventory | **Never targeted** |
 
 This version does **not** deduplicate dependencies, share environments between worktrees, delete Git branches, uninstall Xcode, remove arbitrary `build`/`dist` folders, or sweep global IDE caches. It does not manage remote computers, or cloud workspaces. Xcode and iOS simulator adapters are macOS-only.
@@ -179,7 +179,6 @@ The terminal installers and Homebrew Brewfile start the service immediately. Eac
 | Normal inactivity | 7 days |
 | Inactivity when available space is below the target | 7 days |
 | Free-space target | 20 GiB |
-| Clean-worktree recovery bundle budget | 2 GiB; further clean-worktree removal stops when it would be exceeded |
 | Removal per pass | No item-count or byte cap; every eligible action is revalidated and attempted. Skipped items do not stop later candidates. |
 | Opt-in package-cache budget | 5 GiB per reported cache |
 | Maintenance/recollection cooldown | 7 days |
@@ -208,7 +207,6 @@ Project discovery includes hidden folders, is limited to eight directory levels 
 aigc config show
 aigc config path
 aigc config set min-free-space 25GB
-aigc config set budget.backups 2GB
 aigc config set retention-days 14
 aigc config set pressure-retention-days 3
 aigc config set worktree-cleanup false
@@ -288,17 +286,11 @@ Use `aigc config path` to find state on your platform (locations are listed abov
 - `last-report.json`: the most recent inventory snapshot.
 - `history.json`: the most recent 500 cleanup outcomes.
 - `leases/`: foreground command reservations.
-- `backups/`: verified Git bundles for clean removed worktrees; not automatically expired.
+- `backups/`: legacy recovery bundles from older releases; left untouched.
 
-For a **clean** regular worktree, aigc creates and verifies a bundle of its HEAD history, including unpushed commits. The branch stays in the original repository. Restore using:
+Clean and dirty eligible worktrees are removed without creating recovery archives. Dirty trees use `git worktree remove --force`; local changes and ignored files are permanently discarded. Named branches remain in the original repository. Detached commits can eventually be discarded by Git because no branch keeps them reachable. Open PR, activity, age and pin checks still apply.
 
-```sh
-git clone '/path/from/history/to/backup.bundle' restored-worktree
-```
-
-For a **dirty** regular worktree, aigc uses `git worktree remove --force`. It does **not** make a bundle or another recovery copy. Tracked edits, untracked files, ignored files, local configuration and generated content inside it are permanently discarded. A named Git branch and its committed history remain in the original repository. A detached checkout has no branch keeping its commits reachable; after force removal, Git may eventually discard those commits too. Pin a tree, use a reservation, or set `worktree-force false` to keep local files.
-
-Clean-tree bundles consume disk space and should be reviewed when no longer needed. Creation checks a 2 GiB default backup budget and available space; failed new bundles are removed. They do not back up other linked worktrees or external files. If clean-tree backup creation or verification fails, removal does not proceed.
+Existing recovery bundles from older releases are left untouched. They can be restored with `git clone /path/to/backup.bundle restored-worktree`.
 
 Stop and uninstall without deleting configuration or recovery data:
 
@@ -308,6 +300,7 @@ rm "$HOME/.local/bin/aigc"
 ```
 
 The LaunchAgent is `~/Library/LaunchAgents/io.aigc.collector.plist`. `service uninstall` removes it. Inspect retained state/backups before removing the state directory yourself. `AIGC_STATE_DIR` is available for isolated manual runs; service installation refuses this override.
+
 
 ## Development and validation
 
@@ -323,4 +316,4 @@ All GitHub Actions workflows are manually triggered. Builds produce macOS, Windo
 
 MIT licensed. Contributions that improve activity detection, tool compatibility and recovery are welcome.
 
-Legacy `max_delete_bytes_per_run` settings are accepted but ignored and omitted when configuration is saved. The separate clean-worktree recovery budget still applies.
+Legacy `max_delete_bytes_per_run` settings are accepted but ignored and omitted when configuration is saved. Legacy `backup_budget_bytes` is also accepted but ignored and omitted when configuration is saved; no recovery archives are created.

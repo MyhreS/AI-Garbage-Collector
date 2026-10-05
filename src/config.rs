@@ -24,7 +24,9 @@ pub struct Config {
     pub retention_days: u64,
     pub pressure_retention_days: u64,
     pub min_free_bytes: u64,
-    pub backup_budget_bytes: u64,
+    // Read legacy configurations without creating backups or enforcing their budget.
+    #[serde(rename = "backup_budget_bytes", skip_serializing)]
+    legacy_backup_budget_bytes: Option<u64>,
     pub worktree_cleanup: bool,
     pub worktree_force: bool,
     pub worktree_require_pr_verification: bool,
@@ -58,7 +60,7 @@ impl Default for Config {
             retention_days: 7,
             pressure_retention_days: 7,
             min_free_bytes: 20 * GIB,
-            backup_budget_bytes: 2 * GIB,
+            legacy_backup_budget_bytes: None,
             worktree_cleanup: true,
             worktree_force: true,
             worktree_require_pr_verification: false,

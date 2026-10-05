@@ -58,7 +58,7 @@ Cleanup passes have no item-count or byte cap. Skipped resources do not stop lat
 
 | Resource | Behavior |
 | --- | --- |
-| Git worktrees, including Codex and Claude | Remove after 7 days since the latest file write, HEAD commit or detected use. Dirty trees are force-removed; clean trees require a verified Git recovery bundle. |
+| Git worktrees, including Codex and Claude | Remove after 7 days since the latest file write, HEAD commit or detected use. Clean and dirty trees are removed without recovery archives; dirty trees use force removal. |
 | Recognized dependencies and build output | Remove eligible `node_modules`, Rust/Swift/Next.js output and Xcode DerivedData after observed inactivity; protect tracked source. |
 | Python/Poetry environments | Automatically remove after 7 days since the latest file write or detected use, including the first scan. Orphaned Poetry environments are included. |
 | Devices, runtimes, SDKs | Automatically collect eligible resources after activity and dependency checks. Xcode/iOS support is macOS-only. |
