@@ -78,7 +78,8 @@ pub fn collect(c: &Config, dir: &Path, report: &Report) -> Result<Vec<Event>> {
                 })
         });
         let precheck = if !activity.reliable
-            || activity.busy
+            || activity.global_reserved
+            || (activity.busy && item.kind != "worktrees")
             || reserved
             || activity.touches(item.path.as_deref())
         {
@@ -186,6 +187,16 @@ fn verify_path(item: &Item) -> Result<PathBuf> {
     );
     Ok(p)
 }
+fn verify_worktree_ref(item: &Item, path: &Path) -> Result<()> {
+    let head = git(path, &["rev-parse", "HEAD"])?;
+    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
+    ensure!(
+        item.evidence.metadata["head_oid"].as_str() == Some(head.trim())
+            && item.evidence.metadata["branch"].as_str() == Some(branch.trim()),
+        "worktree HEAD or branch changed after the scan"
+    );
+    Ok(())
+}
 fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
     if item.evidence.action.is_some() {
         if matches!(
@@ -238,12 +249,18 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             )
         }
         "worktrees" => {
-            ensure!(
-                c.managed.contains_key(&item.id),
-                "worktree not registered as disposable"
-            );
+            ensure!(c.worktree_cleanup, "worktree cleanup disabled");
             let p = verify_path(item)?;
-            inventory::worktree_safe(&p)?;
+            ensure!(
+                c.roots.iter().any(|r| p.starts_with(r)),
+                "worktree is outside configured roots"
+            );
+            let dirty = inventory::worktree_removable(&p)?;
+            verify_worktree_ref(item, &p)?;
+            ensure!(
+                !dirty || c.worktree_force,
+                "worktree has local files and force removal is disabled"
+            );
             crate::github::ensure_no_open_pr(&p)?;
             ensure!(
                 !p.components().any(|p| matches!(
@@ -261,6 +278,35 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 !rec.split('\0').any(|f| f.starts_with("locked")),
                 "worktree is locked"
             );
+            if dirty {
+                let activity = inventory::activity(dir);
+                ensure!(
+                    activity.reliable
+                        && !activity.global_reserved
+                        && !activity.touches(Some(&p))
+                        && !activity.reserved.iter().any(|id| {
+                            id == &item.id
+                                || (id.starts_with('/')
+                                    && (p.starts_with(id) || Path::new(id).starts_with(&p)))
+                        }),
+                    "worktree became active or reserved"
+                );
+                verify_path(item)?;
+                ensure!(
+                    inventory::worktree_removable(&p)?,
+                    "worktree status changed before force removal"
+                );
+                crate::github::ensure_no_open_pr(&p)?;
+                verify_worktree_ref(item, &p)?;
+                git(
+                    &p,
+                    &["worktree", "remove", "--force", "--", p.to_str().unwrap()],
+                )?;
+                return Ok(
+                    "Force-removed idle worktree and discarded tracked edits, untracked and ignored files; branch retained, no recovery archive"
+                        .into(),
+                );
+            }
             let backup = dir.join("backups");
             fs::create_dir_all(&backup)?;
             let mut hash = DefaultHasher::new();
@@ -303,7 +349,11 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 let _ = fs::remove_file(&bundle);
                 return Err(e);
             }
-            inventory::worktree_safe(&p)?;
+            ensure!(
+                !inventory::worktree_removable(&p)?,
+                "worktree changed after recovery bundle"
+            );
+            verify_worktree_ref(item, &p)?;
             git(&p, &["worktree", "remove", "--", p.to_str().unwrap()])?;
             Ok(format!(
                 "Git HEAD history saved to {}; branch retained",
@@ -463,7 +513,10 @@ fn revalidate(item: &Item, c: &Config, dir: &Path) -> Result<()> {
             && current.evidence.identity == item.evidence.identity
             && current.bytes == item.bytes
             && current.modified == item.modified
-            && current.entries == item.entries,
+            && current.entries == item.entries
+            && (item.kind != "worktrees"
+                || (current.evidence.metadata["head_oid"] == item.evidence.metadata["head_oid"]
+                    && current.evidence.metadata["branch"] == item.evidence.metadata["branch"])),
         "resource identity or content changed"
     );
     Ok(())

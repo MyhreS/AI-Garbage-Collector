@@ -1,4 +1,4 @@
-# Adapter behavior in v0.3
+# Adapter behavior in v0.4
 
 AI Garbage Collector runs on the local Mac, using already-installed tools. It does not install dependencies, start Docker builders, run project build scripts or contact a remote development environment. Unavailable tools are reported as unavailable; missing information never authorizes removal.
 
@@ -16,9 +16,11 @@ AI Garbage Collector runs on the local Mac, using already-installed tools. It do
 
 `inspect ID` performs a fresh inventory and returns one resource. `status python --owners` and `status docker --builders` expose the deeper metadata. `own ID --owner TASK` records ownership. `require ID --project PROJECT` protects an explicit future requirement. `unrequire` removes that reference. Neither `own` nor `require` authorizes deletion.
 
-`manage ID --owner TASK` marks a supported resource disposable. Its current references, pins, activity, observation period and other protections still apply. Resource IDs should be copied exactly from status; Python environments discovered through existing project-local inventory can retain a `dependencies:` ID for compatibility.
+`manage ID --owner TASK` marks an opt-in resource disposable. Its current references, pins, activity, observation period and other protections still apply. Regular linked Git worktrees no longer need registration. Resource IDs should be copied exactly from status; Python environments discovered through existing project-local inventory can retain a `dependencies:` ID for compatibility.
 
-Managed Git worktrees also require a successful authenticated GitHub CLI lookup for open PRs on their branch in the checkout repository and its fork parent, if any. An open PR or failed lookup protects the worktree. The lookup is repeated before removal; PRs targeting unrelated repositories require an explicit pin or `require` entry.
+Regular linked Git worktrees use the latest file or directory modification time, HEAD commit time and detected use as the inactivity clock. Seven-day-old trees can qualify on the first scan, including trees with tracked edits, untracked files and ignored files. Those dirty trees are removed with `git worktree remove --force` and **no recovery copy of local files**. The Git branch remains. Clean trees still require a verified HEAD bundle. Set `worktree-cleanup false` to disable this adapter or `worktree-force false` to retain dirty trees.
+
+Before deletion, regular worktrees require a successful authenticated GitHub CLI lookup for open PRs on their branch in the checkout repository and its fork parent, if any. An open PR or failed lookup protects the worktree. The lookup is repeated before removal; PRs targeting unrelated repositories require an explicit pin or `require` entry. Primary, locked, submodule-containing, current-working-directory and app-managed Codex worktrees remain protected. Filesystem write times cannot reveal an agent that only reads a tree or plans to return to it, so pins and `aigc run` reservations remain useful.
 
 `duplicates` groups matching recorded inputs. Python fingerprints include lockfile, interpreter configuration and installed distribution metadata (including available direct-URL records); build/Node fingerprints cover available lock inputs. Fingerprints do not establish identical mutable contents, selected flags or safe interchangeability. No environments are merged.
 
@@ -83,7 +85,7 @@ aigc register /Users/me/Projects/task/package-staging --kind scratch \
   --owner task-123 --purpose 'Rebuildable packaging output' --retain-days 30
 ```
 
-Supported kinds are `scratch`, `builds` and `python`. Registration records owner, purpose and minimum retention deadline. It authorizes generated-content disposal only. Home roots, recognized sensitive/application/personal locations, tracked source, nested repositories, noncanonical paths and incomplete scans are refused. A registered Python path must contain `pyvenv.cfg`. Register a whole Git checkout through the existing worktree workflow instead.
+Supported kinds are `scratch`, `builds` and `python`. Registration records owner, purpose and minimum retention deadline. It authorizes generated-content disposal only. Home roots, recognized sensitive/application/personal locations, tracked source, nested repositories, noncanonical paths and incomplete scans are refused. A registered Python path must contain `pyvenv.cfg`. A regular linked Git worktree is handled by the worktree policy above.
 
 `unregister PATH` withdraws this registration. `unmanage ID` separately withdraws ID-based disposal permission.
 
@@ -111,7 +113,7 @@ Existing disposable-AVD handling remains, including deferral while an emulator m
 
 A process that explicitly escapes the group cannot be tracked by this mechanism. Use pins for daemonized work. A crash leaves the lease in place, including older-format leases; `leases` shows retained records. `release-lease ID` is an explicit user/agent statement that the protected work has ended, not automatic proof of inactivity.
 
-Broad recognized-process deferral is retained as an additional conservative safeguard. Scoped reservations improve attribution but do not disable that guard. OS inspection cannot establish that every paused agent has finished. No private agent session database is modified.
+Broad recognized-process deferral remains for categories other than worktrees. A regular worktree instead uses its own open-file/working-directory evidence, scoped reservations and global `aigc run` reservations, so an agent elsewhere does not indefinitely block old-tree collection. OS inspection cannot establish that every paused agent has finished. No private agent session database is modified.
 
 ## Accounting, limits and migration
 
@@ -120,6 +122,6 @@ Broad recognized-process deferral is retained as an additional conservative safe
 - Each pass attempts at most ten initially eligible resources. Every action gets fresh inventory/policy and identity checks; changed resources are skipped. Full revalidation is intentionally conservative and can take time on large roots.
 - Native maintenance and recollection have a default seven-day cooldown. History separates `removed`, `maintained`, `no_op` and `skipped`, estimated bytes, optional native reclaimed bytes and observed host free-space change.
 - `deep-inventory=false` disables the new discovery layer, including new adapters; it does not enable an older broad Docker pruning fallback.
-- Existing config loads with defaults for new fields. Policy version 3 invalidates old cached reports and updated signatures restart observation when identities change. The executable does not migrate or delete user data.
+- Existing config loads with defaults for new fields. Policy version 4 invalidates old cached reports. Regular worktree eligibility uses filesystem/commit age on the first scan; other filesystem observations still restart when identities change. The executable does not migrate or delete user data.
 
 The release does not implement a continuous Docker event listener, exact agent-session attribution, automatic mutable-environment sharing, full dynamic build evaluation or exact APFS extent accounting. Those limitations are visible rather than replaced with guessed ownership or fabricated usage statistics.

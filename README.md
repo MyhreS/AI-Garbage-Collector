@@ -8,7 +8,7 @@ AI Garbage Collector exists to clean up after AI coding agents. Running many age
 
 No cloud environment, subscription, account, or AI model. A release installs as one native executable; users do not need Rust, Python, or Node.
 
-**Version 0.3 adds open-PR protection for disposable Git worktrees.** It does not yet safely automate every category it can report. Read the coverage table before enabling it.
+**Version 0.4 automatically removes regular linked Git worktrees after seven days without a file write, HEAD commit or detected use.** On the first scan, old worktrees can qualify immediately. Eligible worktrees with local changes are force-removed, including tracked edits, untracked files and ignored files, with no recovery copy of those files. Read the coverage table before installing.
 
 ## Install
 
@@ -56,7 +56,7 @@ rm /tmp/aigc-install.sh
 
 The installer verifies the release archive's SHA-256 checksum, installs `~/.local/bin/aigc`, and starts an hourly per-user LaunchAgent. It prints the full executable path if `~/.local/bin` is not on your `PATH`. It does not request administrator access or edit your shell startup files.
 
-Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.3.0` to select a particular release.
+Release binaries are **not Developer ID signed or notarized** yet. Checksums check the downloaded archive against the release manifest; they do not replace publisher signing. There is no automatic binary updater. Re-run the installer to update. Set `AIGC_VERSION=v0.4.0` to select a particular release.
 
 ### Build and install from source
 
@@ -101,13 +101,13 @@ Counts are resource counts, not agent/session counts. Detailed Docker cache entr
 
 ## What it does and does not clean
 
-| Resource | Reports | Automatic cleanup in v0.3 |
+| Resource | Reports | Automatic cleanup in v0.4 |
 | --- | --- | --- |
 | Xcode DerivedData children | Yes | After observed inactivity and activity checks |
 | `node_modules` | Yes | Recognized project folders only; refuses Git-tracked files |
 | Python / Poetry project environments | Project associations, interpreter metadata, matching-input candidates | Explicitly disposable, unshared environments only; linked environments and installed tools protected |
 | Rust `target`, Swift `.build`, Next.js `.next` | Yes | Recognized project folders only; refuses Git-tracked files |
-| Regular Git linked worktrees | Yes | Only explicitly registered disposable trees; must be clean, including ignored files, have no open GitHub PR, and pass a verified recovery bundle |
+| Regular Git linked worktrees | Yes | Automatic after seven days since the latest file write, HEAD commit or detected use, including on the first scan. Dirty trees are force-removed with no recovery of local files. Clean trees require a verified HEAD recovery bundle. Open GitHub PRs are protected. |
 | App-managed worktrees under `.codex` / `.codex-workspaces` | Yes | **Protected.** Use the owning application's archive tool; aigc does not edit its session database |
 | Docker build cache | Per-record metadata from running local single-node Buildx builders | Exact-ID native Buildx pruning; private immutable regular records only, native age filter and storage setting |
 | Docker images | Yes | Only images explicitly registered disposable; native removal without force |
@@ -141,7 +141,7 @@ aigc require 'EXACT-RESOURCE-ID' --project my-project
 aigc unrequire 'EXACT-RESOURCE-ID' --project my-project
 ```
 
-`own` records ownership without authorizing deletion. `require` protects a resource needed by a project, including future builds. `manage` authorizes disposal after all other checks. Inspection includes process IDs/start times, known consumers, native metadata, observation coverage, reconstruction notes and protection reasons. It does not identify every agent session automatically.
+`own` records ownership without authorizing deletion. `require` protects a resource needed by a project, including future builds. `manage` authorizes disposal for opt-in categories after all other checks. Regular linked worktrees need no `manage` command. Inspection includes process IDs/start times, known consumers, native metadata, observation coverage, reconstruction notes and protection reasons. It does not identify every agent session automatically.
 
 `duplicates` groups matching recorded dependency/build inputs. It never merges environments or assumes matching lockfiles make two mutable installations interchangeable. Native previews can include resources that aigc would protect; a preview does not grant deletion permission.
 
@@ -153,17 +153,17 @@ Both recommended installers start the service immediately. Each hourly run inven
 
 | Setting | Default |
 | --- | --- |
-| Normal observed inactivity | 7 days |
+| Normal inactivity | 7 days |
 | Inactivity when available space is below the target | 7 days |
 | Free-space target | 20 GiB |
 | Docker cache storage setting | 5 GiB |
-| Recovery bundle budget | 2 GiB; further worktree removal stops when it would be exceeded |
+| Clean-worktree recovery bundle budget | 2 GiB; further clean-worktree removal stops when it would be exceeded |
 | Estimated removal limit per pass | 50 GiB; at most 10 eligible actions, with complete revalidation per action |
 | Opt-in package-cache budget | 5 GiB per reported cache |
 | Maintenance/recollection cooldown | 7 days |
 | Schedule | Every hour while your user session is logged in; also when loaded |
 
-**A first install starts filesystem observation, not a disk wipe.** Docker build cache is the exception: Docker provides native age/usage filtering, so eligible old cache can be pruned on the first pass. For filesystem resources, age alone does not authorize deletion. A change in size, latest modification time, entry count, or detected use resets the observation clock. A monitoring gap longer than 48 hours also resets it. Leaving the Mac off for a month does not make everything eligible on startup.
+**A first install can remove old regular linked worktrees immediately.** Their clock uses the newest file or directory modification time, HEAD commit time and any detected use. It cannot tell whether somebody read or intends to reuse a worktree. All other filesystem resources require seven days of observed inactivity; a change in size, modification time, entry count or detected use resets that clock, as does a monitoring gap longer than 48 hours. Docker build cache uses its native age and usage filters and can also qualify on the first pass.
 
 The free-space target is a policy trigger, not a guarantee or hard quota. The collector does not remove protected resources to meet it. Native Buildx pruning applies an exact record selector, its age filter and `--max-used-space`. Size estimates are conservative when Docker returns rounded text. Native commands may reclaim less than their reported scope; the free-space target remains a trigger, not a guarantee.
 
@@ -192,6 +192,8 @@ aigc config set retention-days 14
 aigc config set pressure-retention-days 3
 aigc config set max-delete-per-run 20GB
 aigc config set docker-cache-cleanup false
+aigc config set worktree-cleanup false
+aigc config set worktree-force false
 aigc config set budget.package-cache 5GB
 aigc config set maintenance-cooldown-days 7
 aigc config set deep-inventory true
@@ -225,21 +227,20 @@ There is no popularity ranking or fixed number of images to keep. For example, a
 
 Older configuration files containing the retired `docker_keep_most_used` setting remain readable; that setting is ignored and disappears when configuration is next saved. Old ranking state is ignored, and snapshots from the previous policy are refreshed.
 
-### Opt in disposable worktrees, images and virtual devices
+### Opt in disposable images and virtual devices
 
 Copy an exact resource ID from `aigc status <category> --json`:
 
 ```sh
-aigc manage 'worktrees:/Users/me/Projects/task-123' --owner task-123
 aigc manage 'simulators:UUID-FROM-STATUS' --owner mobile-builds
 aigc manage 'emulators:throwaway-pixel' --owner mobile-builds
 aigc manage 'docker-images:sha256:FULL-IMAGE-ID' --owner task-123
 aigc unmanage 'emulators:throwaway-pixel'
 ```
 
-Registration authorizes disposal after policy checks. It does not bypass pins, activity checks, worktree changes, open-PR checks, or app-managed worktree protection. For devices/images, register only data you are willing to lose. Inventory still works without registration.
+Registration authorizes disposal after policy checks for images and devices. Regular linked worktrees need no registration. They still honor pins, activity checks, open-PR checks and app-managed worktree protection. For devices/images, register only data you are willing to lose. Inventory still works without registration.
 
-For a managed Git worktree, `aigc` uses an authenticated [GitHub CLI](https://cli.github.com/manual/) to check open PRs with the same branch in the checkout's repository and, for a fork, its parent. An open PR protects the worktree. If `gh` is missing, unauthenticated, or the lookup fails, the worktree stays protected. The check runs during inventory and again before Git removes the worktree. Keep your checkout's GitHub remote and authentication available; PRs targeting unrelated repositories are outside this lookup.
+For an eligible regular Git worktree, `aigc` uses an authenticated [GitHub CLI](https://cli.github.com/manual/) to check open PRs with the same branch in the checkout's repository and, for a fork, its parent. An open PR protects the worktree. If `gh` is missing, unauthenticated, or the lookup fails, the worktree stays protected. The check runs during inventory and again before Git removes the worktree. Keep your checkout's GitHub remote and authentication available; PRs targeting unrelated repositories are outside this lookup.
 
 ## Use it from an agent
 
@@ -263,7 +264,7 @@ aigc unregister /absolute/path/to/project/package-staging
 
 Registration is explicit permission to dispose of generated contents after its minimum deadline and the normal observation period. It cannot authorize tracked source, nested Git repositories, protected application state or personal folders.
 
-Collection uses `lsof`, process inspection, device state, filesystem observations and native Git/Docker checks. It defers while recognized builds or agents run. **These are best-effort signals, not proof that an arbitrary paused agent is finished.** External tools do not take aigc's lock, so a process can start between inspection and deletion. Use reservations and pins for important work. aigc's own commands serialize state updates and collection with a lock.
+Collection uses `lsof`, process inspection, device state, filesystem observations and native Git/Docker checks. For regular worktrees, it checks for open files and working directories in that tree, scoped reservations and global `aigc run` reservations; a recognized process elsewhere does not block cleanup of an unrelated worktree. Other categories defer while recognized builds or agents run. **These are best-effort signals, not proof that an arbitrary paused agent is finished.** External tools do not take aigc's lock, so a process can start between inspection and deletion. Use reservations and pins for important work. aigc's own commands serialize state updates and collection with a lock.
 
 No MCP server is required. See [agent usage](docs/AGENTS.md) for a short integration guide.
 
@@ -276,15 +277,17 @@ State lives in `~/Library/Application Support/aigc`:
 - `last-report.json`: the most recent inventory snapshot.
 - `history.json`: the most recent 500 cleanup outcomes.
 - `leases/`: foreground command reservations.
-- `backups/`: verified Git bundles for removed worktrees; not automatically expired.
+- `backups/`: verified Git bundles for clean removed worktrees; not automatically expired.
 
-Before removing a regular worktree, aigc refuses modified, untracked and ignored files, then creates and verifies a bundle of its HEAD history, including unpushed commits. The branch stays in the original repository. Restore using:
+For a **clean** regular worktree, aigc creates and verifies a bundle of its HEAD history, including unpushed commits. The branch stays in the original repository. Restore using:
 
 ```sh
 git clone '/path/from/history/to/backup.bundle' restored-worktree
 ```
 
-Bundles consume disk space and should be reviewed when no longer needed. Creation checks a 2 GiB default backup budget and available space; failed new bundles are removed. They do not back up other linked worktrees, arbitrary ignored files, local config, or external files. If backup creation or verification fails, worktree removal does not proceed.
+For a **dirty** regular worktree, aigc uses `git worktree remove --force`. It does **not** make a bundle or another recovery copy. Tracked edits, untracked files, ignored files, local configuration and generated content inside it are permanently discarded. Its Git branch and committed history remain in the original repository. Pin a tree, use a reservation, or set `worktree-force false` to keep local files.
+
+Clean-tree bundles consume disk space and should be reviewed when no longer needed. Creation checks a 2 GiB default backup budget and available space; failed new bundles are removed. They do not back up other linked worktrees or external files. If clean-tree backup creation or verification fails, removal does not proceed.
 
 Stop and uninstall without deleting configuration or recovery data:
 

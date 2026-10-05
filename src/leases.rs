@@ -42,7 +42,10 @@ pub fn apply(dir: &Path, a: &mut Activity) {
                     }
                 }
             }
-            _ => a.busy = true,
+            _ => {
+                a.busy = true;
+                a.global_reserved = true;
+            }
         }
     }
 }

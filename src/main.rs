@@ -14,7 +14,7 @@ use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::PathBuf
 #[command(
     version,
     about = "Keep your Mac's development storage under control",
-    long_about = "Local storage inventory and conservative background garbage collection. No cloud, account or AI model required. Run 'aigc status' to inspect resources and 'aigc clean --dry-run' to explain eligibility."
+    long_about = "Local storage inventory and background garbage collection. Regular linked worktrees older than seven days can be force-removed with local files discarded. No cloud, account or AI model required. Run 'aigc status' to inspect resources and 'aigc clean --dry-run' to explain eligibility."
 )]
 struct Cli {
     #[arg(
@@ -97,7 +97,7 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
-    /// Mark a resource ID from status --json as disposable. Device data will be lost on deletion.
+    /// Mark an opt-in resource ID from status --json as disposable. Device data will be lost on deletion.
     Manage {
         id: String,
         #[arg(long, default_value = "user")]
@@ -246,7 +246,7 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
     if category.is_some() {
         for i in items {
             println!(
-                "\n{}\n  {:?} · {} · idle observed {:.1} days\n  {}",
+                "\n{}\n  {:?} · {} · idle {:.1} days\n  {}",
                 i.id,
                 i.status,
                 runtime::size_label(i.bytes),
@@ -299,6 +299,8 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
         "budget.backups" => c.backup_budget_bytes = config::bytes(value)?,
         "max-delete-per-run" => c.max_delete_bytes_per_run = config::bytes(value)?,
         "docker-cache-cleanup" => c.docker_cache_cleanup = value.parse()?,
+        "worktree-cleanup" => c.worktree_cleanup = value.parse()?,
+        "worktree-force" => c.worktree_force = value.parse()?,
         "budget.package-cache" => c.cache_budget_bytes = config::bytes(value)?,
         "maintenance-cooldown-days" => c.maintenance_cooldown_days = value.parse()?,
         "deep-inventory" => c.deep_inventory = value.parse()?,
@@ -307,7 +309,7 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
                 .context("roots must be a JSON array of absolute paths")?
         }
         _ => bail!(
-            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.docker-cache, budget.backups, max-delete-per-run, docker-cache-cleanup, budget.package-cache, maintenance-cooldown-days, deep-inventory, or roots"
+            "unknown setting; use retention-days, pressure-retention-days, min-free-space, budget.docker-cache, budget.backups, max-delete-per-run, docker-cache-cleanup, worktree-cleanup, worktree-force, budget.package-cache, maintenance-cooldown-days, deep-inventory, or roots"
         ),
     }
     c.validate()

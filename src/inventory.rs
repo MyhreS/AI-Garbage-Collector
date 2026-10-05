@@ -86,6 +86,7 @@ pub struct Report {
 pub struct Activity {
     pub reliable: bool,
     pub busy: bool,
+    pub global_reserved: bool,
     pub open_paths: Vec<PathBuf>,
     pub processes: Vec<crate::evidence::Process>,
     pub reserved: Vec<String>,
@@ -408,6 +409,34 @@ fn discover_projects(
                         Some(path.clone()),
                         true,
                     );
+                    match git(&path, &["log", "-1", "--format=%ct", "HEAD"])
+                        .and_then(|s| Ok(s.trim().parse::<u64>()?))
+                    {
+                        Ok(committed_at) => {
+                            i.evidence
+                                .metadata
+                                .insert("head_committed_at".into(), committed_at.into());
+                        }
+                        Err(_) => {
+                            i.protection = Some("cannot verify worktree HEAD commit time".into());
+                        }
+                    }
+                    match git(&path, &["rev-parse", "HEAD"]) {
+                        Ok(head) => {
+                            i.evidence
+                                .metadata
+                                .insert("head_oid".into(), head.trim().into());
+                        }
+                        Err(_) => i.protection = Some("cannot verify worktree HEAD".into()),
+                    }
+                    match git(&path, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+                        Ok(branch) => {
+                            i.evidence
+                                .metadata
+                                .insert("branch".into(), branch.trim().into());
+                        }
+                        Err(_) => i.protection = Some("cannot verify worktree branch".into()),
+                    }
                     if index == 0 {
                         i.protection = Some("primary checkout".into());
                     } else if flags
@@ -415,8 +444,15 @@ fn discover_projects(
                         .any(|s| s.starts_with("locked") || s.starts_with("prunable"))
                     {
                         i.protection = Some("Git marks this worktree locked or prunable".into());
-                    } else if let Err(e) = worktree_safe(&path) {
-                        i.protection = Some(e.to_string());
+                    } else {
+                        match worktree_removable(&path) {
+                            Ok(dirty) => {
+                                i.evidence
+                                    .metadata
+                                    .insert("uncommitted_or_ignored_files".into(), dirty.into());
+                            }
+                            Err(e) => i.protection = Some(e.to_string()),
+                        }
                     }
                     // App-managed trees must be archived by their owning application.
                     if path.components().any(|p| {
@@ -427,7 +463,20 @@ fn discover_projects(
                                 .into(),
                         );
                     }
-                    if i.protection.is_none() && c.managed.contains_key(&i.id) {
+                    let latest_write_or_commit = i.modified.max(
+                        i.evidence.metadata["head_committed_at"]
+                            .as_u64()
+                            .unwrap_or(u64::MAX),
+                    );
+                    if i.protection.is_none()
+                        && c.worktree_cleanup
+                        && (c.worktree_force
+                            || !i.evidence.metadata["uncommitted_or_ignored_files"]
+                                .as_bool()
+                                .unwrap_or(true))
+                        && now().saturating_sub(latest_write_or_commit)
+                            >= c.pressure_retention_days.min(c.retention_days) * 86400
+                    {
                         i.protection = match crate::github::open_pr(&path) {
                             Ok(Some(url)) => Some(format!("open GitHub pull request: {url}")),
                             Ok(None) => None,
@@ -444,7 +493,7 @@ fn discover_projects(
     }
     projects.into_iter().collect()
 }
-pub fn worktree_safe(path: &Path) -> Result<()> {
+pub fn worktree_removable(path: &Path) -> Result<bool> {
     let status = git(
         path,
         &[
@@ -455,10 +504,6 @@ pub fn worktree_safe(path: &Path) -> Result<()> {
         ],
     )?;
     anyhow::ensure!(
-        status.is_empty(),
-        "contains modified, untracked or ignored files"
-    );
-    anyhow::ensure!(
         !path.join(".gitmodules").exists(),
         "submodules require manual handling"
     );
@@ -467,7 +512,7 @@ pub fn worktree_safe(path: &Path) -> Result<()> {
     anyhow::ensure!(common.trim() != gd.trim(), "primary checkout");
     let current = std::env::current_dir()?;
     anyhow::ensure!(!current.starts_with(path), "current working directory");
-    Ok(())
+    Ok(!status.is_empty())
 }
 fn scan_simulators(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
     match command("xcrun", &["simctl", "list", "--json"])

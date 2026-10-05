@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 3;
+pub const POLICY_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -63,12 +63,17 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         }
         let gap = time.saturating_sub(o.last_seen) > 48 * 3600;
         i.evidence.observation_gap = gap;
-        if i.active || a.touches(i.path.as_deref()) {
+        let worktree = i.kind == "worktrees";
+        let signature_changed = o.signature != signature;
+        if i.active
+            || a.touches(i.path.as_deref())
+            || (worktree && (signature_changed || i.evidence.consumers.iter().any(|r| r.protects)))
+        {
             o.last_used = Some(time);
         }
         i.evidence.first_seen = o.first_seen;
         i.evidence.last_observed_use = o.last_used;
-        if o.signature != signature
+        if signature_changed
             || time.saturating_sub(o.last_seen) > 48 * 3600
             || i.active
             || i.evidence.consumers.iter().any(|r| r.protects)
@@ -78,7 +83,18 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         }
         o.signature = signature;
         o.last_seen = time;
-        i.idle_seconds = time.saturating_sub(o.idle_since);
+        i.idle_seconds = if worktree {
+            let head_committed_at = i.evidence.metadata["head_committed_at"]
+                .as_u64()
+                .unwrap_or(time);
+            let last_write_or_use = i
+                .modified
+                .max(head_committed_at)
+                .max(o.last_used.unwrap_or(0));
+            time.saturating_sub(last_write_or_use)
+        } else {
+            time.saturating_sub(o.idle_since)
+        };
         let referenced = i
             .evidence
             .consumers
@@ -98,7 +114,7 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             .is_some_and(|a| !matches!(a, crate::evidence::Action::Buildkit { .. }))
             || matches!(
                 i.kind.as_str(),
-                "worktrees" | "simulators" | "emulators" | "docker-images"
+                "simulators" | "emulators" | "docker-images"
             );
         let cooldown = s
             .maintenance
@@ -142,6 +158,18 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             )
         } else if let Some(reason) = &i.protection {
             (Status::Protected, reason.clone())
+        } else if worktree && !c.worktree_cleanup {
+            (Status::Protected, "worktree cleanup disabled".into())
+        } else if worktree
+            && !c.worktree_force
+            && i.evidence.metadata["uncommitted_or_ignored_files"]
+                .as_bool()
+                .unwrap_or(true)
+        {
+            (
+                Status::Protected,
+                "worktree has local files and force removal is disabled".into(),
+            )
         } else if !i.cleanable {
             (
                 Status::Protected,
@@ -154,7 +182,9 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
             )
         } else if i.kind == "docker-cache" && !c.docker_cache_cleanup {
             (Status::Protected, "Docker cache cleanup disabled".into())
-        } else if a.busy {
+        } else if a.global_reserved {
+            (Status::Protected, "aigc run reserves all resources".into())
+        } else if a.busy && !worktree {
             (
                 Status::Protected,
                 "a build or agent process is running; collection deferred".into(),
@@ -188,12 +218,24 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         } else if i.idle_seconds < days * 86400 {
             (
                 Status::Observing,
-                format!("requires {days} days of observed inactivity"),
+                if worktree {
+                    format!(
+                        "requires {days} days since the latest file write, HEAD commit or detected use"
+                    )
+                } else {
+                    format!("requires {days} days of observed inactivity")
+                },
             )
         } else {
             (
                 Status::Eligible,
-                format!("observed idle for at least {days} days; rechecked before deletion"),
+                if worktree {
+                    format!(
+                        "no file write, HEAD commit or detected use for at least {days} days; rechecked before deletion"
+                    )
+                } else {
+                    format!("observed idle for at least {days} days; rechecked before deletion")
+                },
             )
         };
         if status != Status::Eligible && !i.evidence.blockers.contains(&reason) {
