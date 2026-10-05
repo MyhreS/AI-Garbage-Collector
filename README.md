@@ -43,7 +43,7 @@ Remove-Item "$env:TEMP\aigc-install.ps1"
 ```sh
 aigc status                     # Counts, sizes, activity and eligibility
 aigc status worktrees --refresh # Fresh worktree inventory
-aigc status --json              # Structured output for agents
+aigc status --json              # Structured inventory and scan timings
 aigc clean --dry-run            # Preview cleanup
 aigc pin /absolute/path         # Keep a resource
 aigc pause 2h                   # Temporarily pause cleanup

@@ -12,6 +12,11 @@ pub fn open_pr(path: &Path) -> Result<Option<String>> {
     let head = git(path, &["rev-parse", "--verify", "HEAD"])?;
     ensure!(!head.trim().is_empty(), "worktree HEAD is unknown");
 
+    let repositories = repositories(path)?;
+    open_pr_for_ref(path, &repositories, branch, head.trim())
+}
+
+pub fn repositories(path: &Path) -> Result<Vec<String>> {
     let repo: Value = serde_json::from_str(&command_at(
         "gh",
         &["repo", "view", "--json", "nameWithOwner,parent"],
@@ -22,12 +27,21 @@ pub fn open_pr(path: &Path) -> Result<Option<String>> {
     let name = repo["nameWithOwner"]
         .as_str()
         .context("GitHub repository identity is unavailable")?;
-    let mut repositories = vec![name];
+    let mut repositories = vec![name.to_owned()];
     if let Some(parent) = repo["parent"]["nameWithOwner"].as_str()
         && parent != name
     {
-        repositories.push(parent);
+        repositories.push(parent.to_owned());
     }
+    Ok(repositories)
+}
+
+pub fn open_pr_for_ref(
+    path: &Path,
+    repositories: &[String],
+    branch: Option<&str>,
+    head: &str,
+) -> Result<Option<String>> {
     for repository in repositories {
         if let Some(branch) = branch {
             let output = command_at(

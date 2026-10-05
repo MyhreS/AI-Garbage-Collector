@@ -132,3 +132,46 @@ fn read_limited(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
     }
     Ok(data)
 }
+
+/// Bounded read-only inventory work, returned in input order. Never used for deletion.
+pub fn parallel_map<T: Sync, R: Send, F: Fn(&T) -> R + Sync>(input: &[T], f: F) -> Vec<R> {
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let workers = thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(4)
+        .min(input.len());
+    let next = AtomicUsize::new(0);
+    let output = Mutex::new(Vec::with_capacity(input.len()));
+    thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(item) = input.get(index) else { break };
+                    let value = f(item);
+                    output
+                        .lock()
+                        .expect("inventory worker lock")
+                        .push((index, value));
+                }
+            });
+        }
+    });
+    let mut output = output.into_inner().expect("inventory worker lock");
+    output.sort_unstable_by_key(|(index, _)| *index);
+    output.into_iter().map(|(_, value)| value).collect()
+}
+
+pub fn record_timing(
+    timings: &mut std::collections::BTreeMap<String, u64>,
+    name: &str,
+    start: Instant,
+) {
+    timings.insert(
+        name.into(),
+        start.elapsed().as_millis().min(u64::MAX as u128) as u64,
+    );
+}

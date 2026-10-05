@@ -7,7 +7,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -80,6 +80,8 @@ pub struct Report {
     pub items: Vec<Item>,
     #[serde(default)]
     pub storage: crate::evidence::StorageSummary,
+    #[serde(default)]
+    pub timings_ms: BTreeMap<String, u64>,
 }
 #[derive(Debug, Default)]
 pub struct Activity {
@@ -234,7 +236,8 @@ pub(crate) fn add_folder(items: &mut Vec<Item>, kind: &str, p: PathBuf, cleanabl
         ));
     }
 }
-pub fn scan(c: &Config) -> (Vec<Item>, Vec<String>) {
+pub fn scan(c: &Config, timings: &mut BTreeMap<String, u64>) -> (Vec<Item>, Vec<String>) {
+    let start = std::time::Instant::now();
     let mut items = vec![];
     let mut warnings = vec![];
     let h = home();
@@ -265,13 +268,18 @@ pub fn scan(c: &Config) -> (Vec<Item>, Vec<String>) {
             add_folder(&mut items, kind, h.join(rel), false);
         }
     }
+    crate::runtime::record_timing(timings, "initial_folders", start);
+    let start = std::time::Instant::now();
     let projects = discover_projects(c, &mut items, &mut warnings);
+    crate::runtime::record_timing(timings, "projects_and_worktrees", start);
+    let start = std::time::Instant::now();
     if cfg!(target_os = "macos") {
         scan_simulators(&mut items, &mut warnings);
     }
     scan_android(&mut items, &mut warnings);
+    crate::runtime::record_timing(timings, "devices", start);
     if c.deep_inventory {
-        crate::adapters::scan(c, &projects, &mut items, &mut warnings);
+        crate::adapters::scan(c, &projects, &mut items, &mut warnings, timings);
     }
     let mut seen = HashSet::new();
     items.retain(|i| seen.insert(i.id.clone()));
@@ -407,20 +415,44 @@ fn discover_projects(
     }
     let mut measured_worktrees = HashSet::new();
     for repo in repos {
+        if measured_worktrees.contains(&crate::platform::normalize(repo.clone())) {
+            continue;
+        }
         match git(&repo, &["worktree", "list", "--porcelain", "-z"]) {
             Ok(output) => {
-                for (index, record) in output.split("\0\0").filter(|s| !s.is_empty()).enumerate() {
+                // Native porcelain already contains HEAD and branch for every tree.
+                let records: Vec<_> = output
+                    .split("\0\0")
+                    .filter(|s| !s.is_empty())
+                    .enumerate()
+                    .filter_map(|(index, record)| {
+                        let path = record.split('\0').next()?.strip_prefix("worktree ")?;
+                        let path = PathBuf::from(path);
+                        if !measured_worktrees.insert(crate::platform::normalize(path.clone()))
+                            || !path.exists()
+                        {
+                            return None;
+                        }
+                        Some((index, record))
+                    })
+                    .collect();
+                let repositories = std::sync::OnceLock::new();
+                let per_worktree_config = git(
+                    &repo,
+                    &[
+                        "config",
+                        "--default",
+                        "false",
+                        "--bool",
+                        "--get",
+                        "extensions.worktreeConfig",
+                    ],
+                )
+                .map_or(true, |s| s.trim() != "false");
+                let scanned = crate::runtime::parallel_map(&records, |&(index, record)| {
                     let mut fields = record.split('\0');
-                    let Some(path) = fields.next().and_then(|s| s.strip_prefix("worktree ")) else {
-                        continue;
-                    };
+                    let path = fields.next()?.strip_prefix("worktree ")?;
                     let path = PathBuf::from(path);
-                    if !measured_worktrees.insert(path.clone()) {
-                        continue;
-                    }
-                    if !path.exists() {
-                        continue;
-                    }
                     let flags: Vec<_> = fields.collect();
                     let mut i = Item::new(
                         "worktrees",
@@ -444,21 +476,17 @@ fn discover_projects(
                             i.protection = Some("cannot verify worktree HEAD commit time".into());
                         }
                     }
-                    match git(&path, &["rev-parse", "HEAD"]) {
-                        Ok(head) => {
-                            i.evidence
-                                .metadata
-                                .insert("head_oid".into(), head.trim().into());
-                        }
-                        Err(_) => i.protection = Some("cannot verify worktree HEAD".into()),
+                    if let Some(head) = flags.iter().find_map(|f| f.strip_prefix("HEAD ")) {
+                        i.evidence.metadata.insert("head_oid".into(), head.into());
+                    } else {
+                        i.protection = Some("cannot verify worktree HEAD".into());
                     }
-                    match git(&path, &["rev-parse", "--symbolic-full-name", "HEAD"]) {
-                        Ok(branch) => {
-                            i.evidence
-                                .metadata
-                                .insert("branch".into(), branch.trim().into());
-                        }
-                        Err(_) => i.protection = Some("cannot verify worktree branch".into()),
+                    if let Some(branch) = flags.iter().find_map(|f| f.strip_prefix("branch ")) {
+                        i.evidence.metadata.insert("branch".into(), branch.into());
+                    } else if flags.contains(&"detached") {
+                        i.evidence.metadata.insert("branch".into(), "HEAD".into());
+                    } else {
+                        i.protection = Some("cannot verify worktree branch".into());
                     }
                     if index == 0 {
                         i.protection = Some("primary checkout".into());
@@ -496,7 +524,34 @@ fn discover_projects(
                         && now().saturating_sub(latest_write_or_commit)
                             >= c.pressure_retention_days.min(c.retention_days) * 86400
                     {
-                        i.protection = match crate::github::open_pr(&path) {
+                        let head = i
+                            .evidence
+                            .metadata
+                            .get("head_oid")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        let branch = i
+                            .evidence
+                            .metadata
+                            .get("branch")
+                            .and_then(Value::as_str)
+                            .and_then(|s| s.strip_prefix("refs/heads/"));
+                        let pr = if per_worktree_config {
+                            crate::github::open_pr(&path)
+                        } else {
+                            match repositories.get_or_init(|| {
+                                crate::github::repositories(&repo).map_err(|e| e.to_string())
+                            }) {
+                                Ok(repositories) => crate::github::open_pr_for_ref(
+                                    &path,
+                                    repositories,
+                                    branch,
+                                    head,
+                                ),
+                                Err(error) => Err(anyhow::anyhow!(error.clone())),
+                            }
+                        };
+                        i.protection = match pr {
                             Ok(Some(url)) => Some(format!("open GitHub pull request: {url}")),
                             Ok(None) => None,
                             Err(_) => {
@@ -514,8 +569,9 @@ fn discover_projects(
                             }
                         };
                     }
-                    items.push(i);
-                }
+                    Some(i)
+                });
+                items.extend(scanned.into_iter().flatten());
             }
             Err(e) => warnings.push(format!("{}: {e}", repo.display())),
         }
@@ -536,9 +592,15 @@ pub fn worktree_removable(path: &Path) -> Result<bool> {
         !path.join(".gitmodules").exists(),
         "submodules require manual handling"
     );
-    let common = git(path, &["rev-parse", "--git-common-dir"])?;
-    let gd = git(path, &["rev-parse", "--git-dir"])?;
-    anyhow::ensure!(common.trim() != gd.trim(), "primary checkout");
+    let dirs = git(path, &["rev-parse", "--git-common-dir", "--git-dir"])?;
+    let mut lines = dirs.lines();
+    let common = lines
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("missing Git common directory"))?;
+    let gd = lines
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("missing Git directory"))?;
+    anyhow::ensure!(common != gd, "primary checkout");
     let current = std::env::current_dir()?;
     anyhow::ensure!(!current.starts_with(path), "current working directory");
     Ok(!status.is_empty())
@@ -625,10 +687,17 @@ fn scan_android(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
     }
 }
 pub fn report(c: &Config, dir: &Path) -> Result<(Report, Activity)> {
-    let (mut items, mut warnings) = scan(c);
+    let total_start = std::time::Instant::now();
+    let mut timings = BTreeMap::new();
+    let (mut items, mut warnings) = scan(c, &mut timings);
     add_folder(&mut items, "recovery-backups", dir.join("backups"), false);
+    let start = std::time::Instant::now();
     let a = activity(dir);
+    crate::runtime::record_timing(&mut timings, "activity", start);
+    let start = std::time::Instant::now();
     let storage = crate::evidence::enrich(&mut items, c, &a);
+    crate::runtime::record_timing(&mut timings, "relationships_and_storage_totals", start);
+    crate::runtime::record_timing(&mut timings, "total", total_start);
     if !a.reliable {
         warnings.push("Activity inspection incomplete: cleanup is disabled for this scan".into());
     }
@@ -647,6 +716,7 @@ pub fn report(c: &Config, dir: &Path) -> Result<(Report, Activity)> {
             warnings,
             items,
             storage,
+            timings_ms: timings,
         },
         a,
     ))

@@ -3,6 +3,28 @@ use sha2::{Digest, Sha256};
 
 pub fn scan(projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<String>) {
     let poetry = available("poetry");
+    // Launch native association queries with bounded concurrency; keep native
+    // Poetry mapping rather than guessing its environment naming algorithm.
+    let poetry_projects: Vec<_> = projects
+        .iter()
+        .filter(|p| poetry && p.join("pyproject.toml").is_file() && p.join("poetry.lock").is_file())
+        .cloned()
+        .collect();
+    let queried = crate::runtime::parallel_map(&poetry_projects, |project| {
+        tool(
+            "poetry",
+            &[
+                "--no-plugins",
+                "--no-interaction",
+                "env",
+                "list",
+                "--full-path",
+            ],
+            Some(project),
+        )
+    });
+    let listings: std::collections::BTreeMap<_, _> =
+        poetry_projects.into_iter().zip(queried).collect();
     let mut mapping_failed = false;
     let mut known = std::collections::BTreeSet::new();
     for project in projects
@@ -15,18 +37,8 @@ pub fn scan(projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<Stri
             add(&p, Some(project), local.is_symlink(), None, items);
             known.insert(p);
         }
-        if poetry && project.join("poetry.lock").is_file() {
-            match tool(
-                "poetry",
-                &[
-                    "--no-plugins",
-                    "--no-interaction",
-                    "env",
-                    "list",
-                    "--full-path",
-                ],
-                Some(project),
-            ) {
+        if let Some(listing) = listings.get(project) {
+            match listing {
                 Ok(output) => {
                     for line in output.lines() {
                         let p = PathBuf::from(line.trim_end_matches(" (Activated)").trim());
@@ -54,17 +66,27 @@ pub fn scan(projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<Stri
         )
         && let Ok(root) = crate::runtime::canonical(Path::new(root.trim()))
     {
-        for p in children(&root) {
-            if p.join("pyvenv.cfg").is_file() {
-                if !known.contains(&p) {
-                    add(&p, None, false, Some("poetry"), items);
-                }
-                if let Some(i) = items.iter_mut().find(|i| i.path.as_ref() == Some(&p)) {
-                    i.evidence.metadata.insert(
-                        "poetry_environment_root".into(),
-                        Value::String(root.display().to_string()),
-                    );
-                }
+        let paths: Vec<_> = children(&root)
+            .into_iter()
+            .filter(|p| p.join("pyvenv.cfg").is_file())
+            .collect();
+        let unknown: Vec<_> = paths
+            .iter()
+            .filter(|p| !known.contains(*p))
+            .cloned()
+            .collect();
+        let inspected = crate::runtime::parallel_map(&unknown, |p| {
+            let mut environment = Vec::new();
+            add(p, None, false, Some("poetry"), &mut environment);
+            environment
+        });
+        items.extend(inspected.into_iter().flatten());
+        for p in paths {
+            if let Some(i) = items.iter_mut().find(|i| i.path.as_ref() == Some(&p)) {
+                i.evidence.metadata.insert(
+                    "poetry_environment_root".into(),
+                    Value::String(root.display().to_string()),
+                );
             }
         }
     }

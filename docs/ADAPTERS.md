@@ -4,7 +4,9 @@ AI Garbage Collector runs on the local computer, using already-installed tools. 
 
 ## Evidence and commands
 
-`status --json` uses report schema 2. Each resource has an `evidence` object with:
+`status --json` uses report schema 2. `timings_ms` records total inventory time and time spent in each scan stage. Independent worktree and Poetry inspections use at most four workers; deletion remains sequential. Repository identity is reused within one inventory unless Git enables per-worktree configuration. PR state and filesystem/activity checks are refreshed before deletion.
+
+Each resource has an `evidence` object with:
 
 - Explicit owners, separate from disposal permission.
 - Known consumers and whether each consumer blocks collection.

@@ -186,6 +186,9 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
             ""
         }
     );
+    if let Some(ms) = r.timings_ms.get("total") {
+        println!("Inventory duration: {:.1} seconds", *ms as f64 / 1000.0);
+    }
     println!(
         "Disk: {} total · {} available · {} free-space target",
         runtime::size_label(r.disk_total_bytes),
@@ -230,7 +233,7 @@ fn show(r: &Report, category: Option<&str>, json: bool) -> Result<()> {
         "  These are inventory sizes, not a promise of space reclaimable. No combined total is shown."
     );
     println!(
-        "Filesystem union: {}{} (hardlinks counted once; not guaranteed reclaimable)",
+        "Filesystem union: {}{} (see measurement notes; not guaranteed reclaimable)",
         runtime::size_label(r.storage.filesystem_allocated_union_bytes),
         if r.storage.complete {
             ""

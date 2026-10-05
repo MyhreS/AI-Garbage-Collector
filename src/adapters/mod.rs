@@ -58,7 +58,13 @@ pub fn folder(kind: &str, path: PathBuf, source: &str) -> Item {
     i.evidence.source = source.into();
     i
 }
-pub fn scan(c: &Config, projects: &[PathBuf], items: &mut Vec<Item>, warnings: &mut Vec<String>) {
+pub fn scan(
+    c: &Config,
+    projects: &[PathBuf],
+    items: &mut Vec<Item>,
+    warnings: &mut Vec<String>,
+    timings: &mut std::collections::BTreeMap<String, u64>,
+) {
     if projects.len() > 250 {
         warnings.push(
             "deep project inspection limited to 250 projects; reference-dependent cleanup disabled"
@@ -66,10 +72,18 @@ pub fn scan(c: &Config, projects: &[PathBuf], items: &mut Vec<Item>, warnings: &
         );
     }
     let selected = &projects[..projects.len().min(250)];
+    let start = std::time::Instant::now();
     python::scan(selected, items, warnings);
+    crate::runtime::record_timing(timings, "python", start);
+    let start = std::time::Instant::now();
     caches::scan(items, warnings);
+    crate::runtime::record_timing(timings, "caches", start);
+    let start = std::time::Instant::now();
     builds::scan(selected, items, warnings);
+    crate::runtime::record_timing(timings, "builds", start);
+    let start = std::time::Instant::now();
     mobile::scan(c, selected, items, warnings);
+    crate::runtime::record_timing(timings, "mobile", start);
     for r in &c.registered {
         if !r.path.exists() {
             continue;
