@@ -43,6 +43,7 @@ Remove-Item "$env:TEMP\aigc-install.ps1"
 ```sh
 aigc status                     # Counts, sizes, activity and eligibility
 aigc status worktrees --refresh # Fresh worktree inventory
+aigc status agent-caches --refresh # Codex/Claude cache entries and protection reasons
 aigc status --json              # Structured inventory and scan timings
 aigc clean                      # Scan now and process all eligible resources
 aigc clean --dry-run            # Preview cleanup
@@ -63,6 +64,7 @@ Cleanup passes have no item-count or byte cap. Skipped resources do not stop lat
 | Python/Poetry environments | Automatically remove after 7 days since the latest file write or detected use, including the first scan. Orphaned Poetry environments are included. |
 | Devices, runtimes, SDKs | Automatically collect eligible resources after activity and dependency checks. Xcode/iOS support is macOS-only. |
 | pip, pnpm and npm caches | Automatic native maintenance after inactivity and cooldown checks, regardless of cache size. |
+| Codex and Claude caches | Remove individual regenerable entries after seven days of observation and no file change, access or detected use. Known CLI cache folders are discovered; custom cache roots require explicit configuration. |
 | Other manager caches, browsers, Xcode archives and recovery bundles | Report only or protected. |
 
 Custom scratch paths require registration for discovery, with no extra retention deadline. Other filesystem resources require **7 days of observed inactivity**. Storage figures are estimates. Docker is unsupported. The app does not deduplicate environments, archive agent chats, sweep personal files or manage remote machines.

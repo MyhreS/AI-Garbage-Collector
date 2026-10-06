@@ -409,6 +409,10 @@ fn revalidate(item: &Item, c: &Config, dir: &Path) -> Result<()> {
         report.disk_free_bytes,
         report.generated_at,
     );
+    if item.kind == "agent-caches" {
+        // Preserve newly observed use even when this deletion is deferred.
+        atomic_json(&dir.join("state.json"), &state)?;
+    }
     let current = report
         .items
         .iter()

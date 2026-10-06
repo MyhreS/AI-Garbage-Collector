@@ -31,7 +31,7 @@ enum Commands {
     /// Inspect resources, sizes, activity and cleanup eligibility. Updates observation history.
     Status {
         #[arg(
-            help = "Filter: worktrees, simulators, emulators, dependencies, builds, sdk, runtimes"
+            help = "Filter: worktrees, agent-caches, simulators, emulators, dependencies, builds, sdk, runtimes"
         )]
         category: Option<String>,
         #[arg(long, help = "Ignore the cached snapshot and inspect resources again")]
@@ -296,12 +296,17 @@ fn set_config(c: &mut Config, key: &str, value: &str) -> Result<()> {
         "worktree-require-pr-verification" => c.worktree_require_pr_verification = value.parse()?,
         "maintenance-cooldown-days" => c.maintenance_cooldown_days = value.parse()?,
         "deep-inventory" => c.deep_inventory = value.parse()?,
+        "agent-cache-roots" => {
+            c.agent_cache_roots = serde_json::from_str(value).context(
+                "agent-cache-roots must map codex/claude to arrays of absolute cache paths",
+            )?;
+        }
         "roots" => {
             c.roots = serde_json::from_str(value)
                 .context("roots must be a JSON array of absolute paths")?
         }
         _ => bail!(
-            "unknown setting; use retention-days, pressure-retention-days, min-free-space, worktree-cleanup, worktree-force, worktree-require-pr-verification, maintenance-cooldown-days, deep-inventory, or roots"
+            "unknown setting; use retention-days, pressure-retention-days, min-free-space, worktree-cleanup, worktree-force, worktree-require-pr-verification, maintenance-cooldown-days, deep-inventory, agent-cache-roots, or roots"
         ),
     }
     c.validate()

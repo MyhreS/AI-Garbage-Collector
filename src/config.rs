@@ -46,6 +46,7 @@ pub struct Config {
     legacy_cache_budget_bytes: Option<u64>,
     pub maintenance_cooldown_days: u64,
     pub deep_inventory: bool,
+    pub agent_cache_roots: BTreeMap<String, Vec<PathBuf>>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -78,11 +79,20 @@ impl Default for Config {
             legacy_cache_budget_bytes: None,
             maintenance_cooldown_days: 7,
             deep_inventory: true,
+            agent_cache_roots: BTreeMap::new(),
         }
     }
 }
 impl Config {
     pub fn validate(&self) -> Result<()> {
+        for (owner, paths) in &self.agent_cache_roots {
+            for path in paths {
+                crate::adapters::agent_caches::validate_root(owner, path)?;
+            }
+            if !matches!(owner.as_str(), "codex" | "claude") {
+                bail!("unknown agent cache owner");
+            }
+        }
         if self.retention_days == 0
             || self.pressure_retention_days == 0
             || self.retention_days > 3650

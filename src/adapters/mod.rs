@@ -10,6 +10,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+pub mod agent_caches;
 pub mod builds;
 pub mod caches;
 pub mod mobile;
@@ -77,6 +78,7 @@ pub fn scan(
     crate::runtime::record_timing(timings, "python", start);
     let start = std::time::Instant::now();
     caches::scan(items, warnings);
+    agent_caches::scan(c, items, warnings);
     crate::runtime::record_timing(timings, "caches", start);
     let start = std::time::Instant::now();
     builds::scan(selected, items, warnings);
@@ -259,6 +261,7 @@ pub fn remove(i: &Item, c: &Config) -> Result<String> {
             Ok("Removed disposable environment through Poetry".into())
         }
         Action::Cache { manager, root } => caches::remove(manager, root, c),
+        Action::AgentCache { owner, root } => agent_caches::remove(i, owner, root, c),
         Action::Runtime { uuid, build } => mobile::remove_runtime(uuid, build, c),
         Action::Sdk { root, package } => mobile::remove_sdk(root, package),
     }

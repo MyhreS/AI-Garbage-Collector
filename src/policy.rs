@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const POLICY_VERSION: u32 = 13;
+pub const POLICY_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
@@ -42,6 +42,12 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         c.retention_days
     };
     for i in items {
+        let agent_cache = i.kind == "agent-caches";
+        // Shared agent caches cannot reliably be attributed to individual processes.
+        // Conservatively count a recognized developer process as possible cache use.
+        if agent_cache && a.busy {
+            i.active = true;
+        }
         let signature = format!(
             "{}:{}:{}:{:?}:{:?}:{:?}",
             i.bytes,
@@ -64,7 +70,7 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         let gap = time.saturating_sub(o.last_seen) > 48 * 3600;
         i.evidence.observation_gap = gap;
         let worktree = i.kind == "worktrees";
-        let filesystem_age = worktree || i.kind == "python";
+        let filesystem_age = worktree || i.kind == "python" || agent_cache;
         let signature_changed = o.signature != signature;
         // Inventory signatures include representation details (such as file-ID
         // formatting) that can change on upgrade without any filesystem use.
@@ -100,7 +106,13 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                 .max(head_committed_at)
                 .max(i.evidence.native_last_used.unwrap_or(0))
                 .max(o.last_used.unwrap_or(0));
-            time.saturating_sub(last_write_or_use)
+            // Cache access times can be disabled/coarse. Require a full observation
+            // window too, restarting it after gaps, changes or detected activity.
+            time.saturating_sub(if agent_cache {
+                last_write_or_use.max(o.idle_since)
+            } else {
+                last_write_or_use
+            })
         } else {
             time.saturating_sub(o.idle_since)
         };
@@ -178,10 +190,18 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
                 Status::Protected,
                 "a build or agent process is running; collection deferred".into(),
             )
-        } else if i.idle_seconds < days * 86400 {
+        } else if i.idle_seconds
+            < if agent_cache {
+                crate::adapters::agent_caches::RETENTION_SECONDS
+            } else {
+                days * 86400
+            }
+        {
             (
                 Status::Observing,
-                if worktree {
+                if agent_cache {
+                    "requires seven days of observation and no cache file change, access or detected use; disk pressure does not shorten this".into()
+                } else if worktree {
                     format!(
                         "requires {days} days since the latest file write, HEAD commit or detected use"
                     )
@@ -196,7 +216,9 @@ pub fn evaluate(items: &mut [Item], c: &Config, s: &mut State, a: &Activity, fre
         } else {
             (
                 Status::Eligible,
-                if worktree {
+                if agent_cache {
+                    "cache observed idle and no file change, access or detected use for at least seven days; rechecked before deletion".into()
+                } else if worktree {
                     format!(
                         "no file write, HEAD commit or detected use for at least {days} days; rechecked before deletion"
                     )

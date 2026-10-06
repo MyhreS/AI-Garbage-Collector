@@ -100,6 +100,31 @@ To inspect before enabling the service, run `target/release/aigc status` instead
 
 ## See where the space went
 
+### Codex and Claude cache cleanup
+
+`aigc status agent-caches --refresh` reports individual entries in
+`~/.codex/cache` and `~/.claude/cache`. Sessions, settings, credentials, plugins
+and VM data are excluded. The normal hourly collector processes eligible entries;
+there is no separate service to install.
+
+Dedicated custom cache directories require explicit configuration. For example:
+
+```powershell
+aigc config set agent-cache-roots '{"codex":["D:/codex-cache"]}'
+```
+
+Custom roots must be named `codex-cache` or `claude-cache` and contain only
+regenerable entries. Nested repositories and tracked files are protected.
+Setting this map to `{}` withdraws custom-root discovery.
+
+Each entry requires seven full days without a file write, available file access
+or detected use, plus seven days of observation. Recognized running developer
+processes conservatively reset that window; gaps over 48 hours also reset it.
+Neither disk pressure nor shorter global retention settings bypass the seven-day
+minimum. `aigc clean --dry-run` explains eligibility without removing anything.
+
+### General inventory
+
 ```sh
 aigc status
 aigc status worktrees
