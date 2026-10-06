@@ -56,6 +56,35 @@ Supported native maintenance requires observed inactivity and the configured coo
 
 No cache manager is installed automatically. A manager's default path is not proof that every project uses that path. Do not mark a shared cache disposable if an untracked consumer relies on its exact contents or offline availability.
 
+## Codex and Claude caches
+
+`agent-caches` discovers direct entries under `~/.codex/cache` and
+`~/.claude/cache` on every platform. It never sweeps either application's whole
+home, sessions, credentials, settings, plugins, downloads or virtual-machine data.
+Desktop application caches and arbitrary directories are not adopted implicitly.
+
+Additional dedicated cache roots are opt-in through `agent-cache-roots`, mapping
+`codex` or `claude` to absolute directories named `codex-cache` or `claude-cache`.
+These may be on another drive, for example `D:/codex-cache`. Configuring a root
+declares that its direct entries are regenerable. Source repositories, tracked
+files, links/junctions, special files and incomplete inspections remain protected.
+Cache roots themselves are retained; entries are considered independently.
+
+Cleanup requires **seven full days (604800 seconds)** since the latest file
+write, available file-access timestamp or detected use, and a full seven-day
+observation window. This window restarts after content/signature changes, gaps
+longer than 48 hours or detected activity. First discovery cannot delete old
+entries immediately because historical cache use cannot reliably be established.
+Disk pressure and shorter global retention settings cannot shorten this policy.
+
+Any recognized running developer/agent process conservatively counts as possible
+use of these shared caches, restarting their inactivity window. File-access
+timestamps are OS-dependent and may be disabled; this is not exact session-use
+attribution. Pins, explicit requirements, reservations and unreliable activity
+queries protect caches. Roots, timestamps, contents and file identity are checked
+again before deletion. External uncooperative processes can still race the final
+check; use pins/reservations for cache entries that must be retained.
+
 ## Build output and registered scratch
 
 Existing conventional Rust, Swift and Next.js output remains discoverable. The richer scanner adds project associations, conventional Gradle build directories and statically configured Cargo target directories. Shared discovered outputs are protected. It reads configuration; it does not execute Gradle or build scripts to resolve dynamic destinations. Global Cargo config, workspace configuration outside discovery and custom flags are not exhaustively resolved; register known custom output explicitly.

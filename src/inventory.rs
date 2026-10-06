@@ -118,9 +118,10 @@ pub fn activity(state_dir: &Path) -> Activity {
             let name = Path::new(p.trim())
                 .file_name()
                 .and_then(|s| s.to_str())
-                .unwrap_or("");
+                .unwrap_or("")
+                .to_ascii_lowercase();
             matches!(
-                name,
+                name.as_str(),
                 "xcodebuild"
                     | "swift-build"
                     | "swift-frontend"
@@ -148,7 +149,8 @@ pub fn activity(state_dir: &Path) -> Activity {
                     | "claude"
                     | "aider"
                     | "opencode"
-            )
+            ) || name.starts_with("codex")
+                || name.starts_with("claude")
         });
     }
     crate::leases::apply(state_dir, &mut a);
