@@ -22,7 +22,7 @@ aigc run -- cargo build
 aigc unpin /absolute/path/to/current-task
 ```
 
-Version 0.7 reports schema 2. Read [adapter scope](ADAPTERS.md): some package caches, SDK packages and runtime disks support automatic cleanup, while shared/uncertain resources remain protected. Never treat report-only storage as automatically cleanable.
+Version 0.7 reports schema 2. Read [adapter scope](ADAPTERS.md): some package caches support automatic cleanup; simulators, runtimes, emulators and SDK packages are never touched, while shared/uncertain resources remain protected. Never treat report-only storage as automatically cleanable.
 
 Use `inspect ID` for native usage, ownership, consumers and process evidence. `own ID --owner TASK` records ownership only; `require ID --project PROJECT` protects future requirements. `duplicates` is advisory and never merges environments.
 

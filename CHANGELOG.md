@@ -1,5 +1,9 @@
 # Changes
 
+## Unreleased
+
+- Stop inventorying and removing iOS simulators, simulator runtimes, Android AVDs and Android SDK packages. Reinstalling them is slow and they were being deleted while still wanted.
+
 ## 0.5.0
 
 - Remove Docker inventory, image deletion and build-cache pruning, including CLI flags and settings.

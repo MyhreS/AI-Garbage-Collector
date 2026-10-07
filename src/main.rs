@@ -30,9 +30,7 @@ struct Cli {
 enum Commands {
     /// Inspect resources, sizes, activity and cleanup eligibility. Updates observation history.
     Status {
-        #[arg(
-            help = "Filter: worktrees, simulators, emulators, dependencies, builds, sdk, runtimes"
-        )]
+        #[arg(help = "Filter: worktrees, dependencies, builds, python, package-caches")]
         category: Option<String>,
         #[arg(long, help = "Ignore the cached snapshot and inspect resources again")]
         refresh: bool,
@@ -385,7 +383,7 @@ fn run() -> Result<()> {
                 .iter()
                 .find(|i| i.id == id)
                 .context("resource not found")?;
-            let text = aigc::adapters::mobile::preview(item, &c)?;
+            let text = aigc::adapters::preview(item)?;
             output(
                 &serde_json::json!({"resource":id,"dry_run":true,"native_scope":"native preview may include protected candidates; it does not override aigc policy", "preview":text}),
             )

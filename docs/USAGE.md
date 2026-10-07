@@ -6,7 +6,7 @@
 
 AI Garbage Collector exists to clean up after AI coding agents. Running many agents in parallel can leave behind abandoned worktrees, duplicated dependencies, build output and virtual devices. The goal is to keep limited local storage usable by identifying those leftovers and collecting what is safe to remove.
 
-`aigc` is a local command-line app and hourly background collector for development storage. It inventories Git worktrees, dependencies, build output, iOS simulators, and Android emulators. It explains what is in use, what is protected, and what can be collected.
+`aigc` is a local command-line app and hourly background collector for development storage. It inventories Git worktrees, dependencies, build output, Python environments and package caches. It never touches iOS simulators, simulator runtimes, Android emulators or SDK packages. It explains what is in use, what is protected, and what can be collected.
 
 No cloud environment, subscription, account, or AI model. A release installs as one native executable; users do not need Rust, Python, or Node.
 
@@ -103,8 +103,6 @@ To inspect before enabling the service, run `target/release/aigc status` instead
 ```sh
 aigc status
 aigc status worktrees
-aigc status simulators
-aigc status emulators
 aigc status --json
 aigc status --refresh
 ```
@@ -119,7 +117,7 @@ The overview shows disk capacity, available space, service installation, the las
 - **Eligible:** it passed the current policy; the collector checks again before removal.
 - **Unknown:** a size or activity check was incomplete. Unknown is never treated as unused.
 
-Counts are resource counts, not agent/session counts. SDK entries represent installed packages when discovery succeeds. Unavailable tools produce warnings, not fake zero counts.
+Counts are resource counts, not agent/session counts. Unavailable tools produce warnings, not fake zero counts.
 
 **Sizes are estimates, not a guaranteed reclaimable total.** Worktrees include their dependencies; APFS clones and snapshots can retain blocks. Category sizes must not be added together. The filesystem union counts nested directories and hardlinks once, with a completeness flag; APFS sharing remains an estimate. History records both estimated bytes removed and the actual before/after change in free disk space; concurrent applications can affect that change.
 
@@ -135,10 +133,7 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | Rust `target`, Swift `.build`, Next.js `.next` | Yes | Recognized project folders only; refuses Git-tracked files |
 | Regular Git linked worktrees | Yes | Automatic after seven days since the latest file write, HEAD commit or detected use, including on the first scan. Dirty trees are force-removed with no recovery of local files. Clean trees are also removed without recovery archives. Open GitHub PRs are protected. |
 | Codex worktrees under `.codex` / `.codex-workspaces` | Yes | Same seven-day policy as other linked worktrees; native Git removal, without a Codex snapshot or chat archival |
-| iOS simulator devices | Yes | Eligible shut-down devices; deletes app data through `simctl` |
-| Android AVDs | Yes | Eligible idle AVDs; requires `avdmanager`; defers while any emulator is running |
-| iOS simulator runtimes | Native disk registration, build and retained devices | Eligible runtimes with no retained devices; supported native schema required |
-| Android SDK packages | Installed package IDs, AVD references and simple Gradle declarations | Eligible packages; unresolved Gradle requirements protect packages |
+| iOS simulators, simulator runtimes, Android AVDs and SDK packages | No | **Never targeted** |
 | pip, pnpm, npm caches | Manager-configured paths | Automatic native purge/prune/verify after observed inactivity and cooldown, regardless of size |
 | uv, Poetry, Cargo, Gradle, Yarn, Bun storage | Configured or documented locations; scope varies by adapter | **Report only**; native ownership/retention can span resources |
 | Playwright browsers, npx installations | Revisions/installations and available package references | **Report only**; keep native ownership controls |
@@ -148,9 +143,9 @@ Docker inventory and cleanup are not supported. Images, containers, volumes and 
 | Legacy recovery bundles | Yes | **Always protected; user-managed retention** |
 | Databases, credentials, signing keys, personal files | Not a general-purpose inventory | **Never targeted** |
 
-This version does **not** deduplicate dependencies, share environments between worktrees, delete Git branches, uninstall Xcode, remove arbitrary `build`/`dist` folders, or sweep global IDE caches. It does not manage remote computers, or cloud workspaces. Xcode and iOS simulator adapters are macOS-only.
+This version does **not** deduplicate dependencies, share environments between worktrees, delete Git branches, uninstall Xcode, remove arbitrary `build`/`dist` folders, or sweep global IDE caches. It does not manage remote computers, or cloud workspaces. Xcode DerivedData handling is macOS-only.
 
-These generated directories are treated as disposable. Pin them if you keep manual changes or irreplaceable files inside them. Removing dependencies or build output means a later install/build may take longer and require internet access. Registered disposable simulator and emulator data is permanently deleted. There is no universal undo for caches or devices.
+These generated directories are treated as disposable. Pin them if you keep manual changes or irreplaceable files inside them. Removing dependencies or build output means a later install/build may take longer and require internet access. There is no universal undo for caches.
 
 ## Detailed inspection and ownership
 
@@ -220,7 +215,6 @@ aigc config set roots '["/Users/me/Projects", "/Users/me/other-repository"]'
 
 ```sh
 aigc pin /absolute/path/to/important-worktree
-aigc pin 'simulators:UUID-FROM-STATUS'
 aigc unpin /absolute/path/to/important-worktree
 aigc pause 2h
 aigc resume
@@ -233,17 +227,7 @@ aigc service status
 
 Pins protect a directory, its descendants, and containing resources that would otherwise remove it. A successful `clean` with no eligible items does nothing; use `plan` for the reasons.
 
-### Opt in disposable virtual devices
-
-Copy an exact resource ID from `aigc status <category> --json`:
-
-```sh
-aigc manage 'simulators:UUID-FROM-STATUS' --owner mobile-builds
-aigc manage 'emulators:throwaway-pixel' --owner mobile-builds
-aigc unmanage 'emulators:throwaway-pixel'
-```
-
-Registration authorizes disposal after policy checks for devices. Regular linked worktrees need no registration. They still honor aigc pins, activity checks and open-PR checks. For devices, register only data you are willing to lose. Inventory still works without registration.
+Regular linked worktrees need no registration. They still honor aigc pins, activity checks and open-PR checks.
 
 For an eligible regular Git worktree, `aigc` uses [GitHub CLI](https://cli.github.com/manual/) to check open PRs in the checkout repository and its fork parent. Named branches use their branch name; detached checkouts use PRs associated with the HEAD commit. A detected open PR protects the worktree. **By default, a missing GitHub CLI, failed authentication or failed lookup does not block an otherwise eligible seven-day-old worktree.** The report labels unavailable verification. Set `worktree-require-pr-verification true` to retain worktrees whenever this check fails. Checks run during inventory and before removal. Commit associations and repository discovery cannot identify every related PR, especially PRs targeting unrelated repositories; pin those worktrees.
 

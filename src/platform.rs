@@ -22,15 +22,6 @@ pub fn state_dir() -> PathBuf {
             .join("aigc")
     }
 }
-pub fn android_sdk() -> PathBuf {
-    if cfg!(windows) {
-        home().join("AppData/Local/Android/Sdk")
-    } else if cfg!(target_os = "macos") {
-        home().join("Library/Android/sdk")
-    } else {
-        home().join("Android/Sdk")
-    }
-}
 pub fn private_dir(p: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -172,12 +163,4 @@ pub fn volume(id: file_id::FileId) -> u64 {
             ..
         } => volume_serial_number,
     }
-}
-
-pub fn emulator_running(names: &str) -> bool {
-    names.lines().any(|line| {
-        let normalized = line.trim().replace('\\', "/").to_ascii_lowercase();
-        let name = normalized.rsplit('/').next().unwrap_or("");
-        name.contains("qemu-system") || name == "emulator" || name == "emulator.exe"
-    })
 }

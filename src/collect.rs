@@ -2,11 +2,10 @@ use crate::{
     config::{Config, atomic_json, home},
     inventory::{self, Item, Report},
     policy::{self, Status},
-    runtime::{canonical, command, git, now},
+    runtime::{canonical, git, now},
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -206,7 +205,6 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
                 crate::evidence::Action::Directory
                     | crate::evidence::Action::Poetry { .. }
                     | crate::evidence::Action::Cache { .. }
-                    | crate::evidence::Action::Sdk { .. }
             )
         ) {
             verify_path(item)?;
@@ -318,74 +316,6 @@ fn remove(item: &Item, c: &Config, dir: &Path) -> Result<String> {
             } else {
                 "Removed idle clean worktree; named branch retained if present; no recovery archive"
             }.into())
-        }
-        "simulators" => {
-            let id = item
-                .id
-                .strip_prefix("simulators:")
-                .context("invalid simulator ID")?;
-            ensure!(
-                id.len() == 36 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'),
-                "invalid simulator UUID"
-            );
-            verify_path(item)?;
-            let v: Value =
-                serde_json::from_str(&command("xcrun", &["simctl", "list", "devices", "--json"])?)?;
-            let device = v["devices"]
-                .as_object()
-                .context("missing devices")?
-                .values()
-                .filter_map(|v| v.as_array())
-                .flatten()
-                .find(|d| d["udid"] == id)
-                .context("device no longer exists")?;
-            ensure!(
-                device["state"] == "Shutdown",
-                "device is running or state is unknown"
-            );
-            command("xcrun", &["simctl", "delete", id])?;
-            Ok("Deleted disposable simulator and its app data using simctl".into())
-        }
-        "emulators" => {
-            let p = verify_path(item)?;
-            let name = item
-                .id
-                .strip_prefix("emulators:")
-                .context("invalid emulator ID")?;
-            ensure!(
-                !name.starts_with('-')
-                    && name
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)),
-                "unsupported AVD name"
-            );
-            let ps = crate::platform::process_names()?;
-            ensure!(
-                !crate::platform::emulator_running(&ps),
-                "an emulator is running"
-            );
-            let ini = fs::read_to_string(p.with_extension("ini"))?;
-            let registered = ini
-                .lines()
-                .find_map(|s| s.strip_prefix("path="))
-                .context("AVD path absent in .ini")?;
-            ensure!(
-                Path::new(registered) == p,
-                "AVD metadata points to another path"
-            );
-            let sdk = crate::adapters::mobile::sdk_root();
-            let tool = sdk.join(if cfg!(windows) {
-                "cmdline-tools/latest/bin/avdmanager.bat"
-            } else {
-                "cmdline-tools/latest/bin/avdmanager"
-            });
-            ensure!(
-                tool.is_file(),
-                "avdmanager unavailable at {}; delete this AVD manually or install command-line tools",
-                tool.display()
-            );
-            command(tool.to_str().unwrap(), &["delete", "avd", "-n", name])?;
-            Ok("Deleted disposable Android AVD and its app data using avdmanager".into())
         }
         _ => bail!("report-only resource"),
     }

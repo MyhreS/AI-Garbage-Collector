@@ -254,14 +254,6 @@ pub fn scan(c: &Config, timings: &mut BTreeMap<String, u64>) -> (Vec<Item>, Vec<
                 ".npm/_cacache",
             ],
         ),
-        (
-            "sdk",
-            vec![
-                "Library/Android/sdk/system-images",
-                "Library/Android/sdk/ndk",
-                "Library/Android/sdk/platforms",
-            ],
-        ),
         ("archives", vec!["Library/Developer/Xcode/Archives"]),
     ] {
         for rel in paths {
@@ -272,12 +264,6 @@ pub fn scan(c: &Config, timings: &mut BTreeMap<String, u64>) -> (Vec<Item>, Vec<
     let start = std::time::Instant::now();
     let projects = discover_projects(c, &mut items, &mut warnings);
     crate::runtime::record_timing(timings, "projects_and_worktrees", start);
-    let start = std::time::Instant::now();
-    if cfg!(target_os = "macos") {
-        scan_simulators(&mut items, &mut warnings);
-    }
-    scan_android(&mut items, &mut warnings);
-    crate::runtime::record_timing(timings, "devices", start);
     if c.deep_inventory {
         crate::adapters::scan(c, &projects, &mut items, &mut warnings, timings);
     }
@@ -604,87 +590,6 @@ pub fn worktree_removable(path: &Path) -> Result<bool> {
     let current = std::env::current_dir()?;
     anyhow::ensure!(!current.starts_with(path), "current working directory");
     Ok(!status.is_empty())
-}
-fn scan_simulators(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
-    match command("xcrun", &["simctl", "list", "--json"])
-        .and_then(|s| Ok(serde_json::from_str::<Value>(&s)?))
-    {
-        Ok(v) => {
-            if let Some(groups) = v["devices"].as_object() {
-                for ds in groups.values().filter_map(|v| v.as_array()) {
-                    for d in ds {
-                        let Some(id) = d["udid"].as_str() else {
-                            continue;
-                        };
-                        let path = home()
-                            .join("Library/Developer/CoreSimulator/Devices")
-                            .join(id);
-                        let mut i = Item::new(
-                            "simulators",
-                            format!("simulators:{id}"),
-                            d["name"].as_str().unwrap_or(id).into(),
-                            Some(path),
-                            true,
-                        );
-                        i.active = d["state"].as_str() != Some("Shutdown");
-                        items.push(i);
-                    }
-                }
-            }
-            if let Some(rs) = v["runtimes"].as_array() {
-                for r in rs {
-                    let id = r["identifier"].as_str().unwrap_or("unknown");
-                    let path = r["bundlePath"].as_str().map(PathBuf::from);
-                    items.push(Item::new(
-                        "runtimes",
-                        format!("runtimes:{id}"),
-                        r["name"].as_str().unwrap_or(id).into(),
-                        path,
-                        false,
-                    ));
-                }
-            }
-        }
-        Err(e) => warnings.push(format!("iOS inventory unavailable: {e}")),
-    }
-}
-fn scan_android(items: &mut Vec<Item>, warnings: &mut Vec<String>) {
-    let root = std::env::var_os("ANDROID_AVD_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(".android/avd"));
-    let ps = crate::platform::process_names();
-    let running = ps
-        .as_ref()
-        .map(|s| crate::platform::emulator_running(s))
-        .unwrap_or(true);
-    for p in children(&root) {
-        if p.extension().is_none_or(|s| s != "avd") {
-            continue;
-        }
-        let name = p
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        let mut i = Item::new(
-            "emulators",
-            format!("emulators:{name}"),
-            name,
-            Some(p),
-            true,
-        );
-        // Defer all AVD removal while any emulator runs; mapping individual instances is not assumed.
-        if running {
-            i.protection = Some("an Android emulator may be running".into());
-        }
-        if ps.is_err() {
-            i.complete = false;
-        }
-        items.push(i);
-    }
-    if !root.exists() {
-        warnings.push("Android AVD directory not present".into());
-    }
 }
 pub fn report(c: &Config, dir: &Path) -> Result<(Report, Activity)> {
     let total_start = std::time::Instant::now();

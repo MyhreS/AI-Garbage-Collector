@@ -12,7 +12,6 @@ use std::{
 };
 pub mod builds;
 pub mod caches;
-pub mod mobile;
 pub mod python;
 
 pub fn available(program: &str) -> bool {
@@ -81,9 +80,6 @@ pub fn scan(
     let start = std::time::Instant::now();
     builds::scan(selected, items, warnings);
     crate::runtime::record_timing(timings, "builds", start);
-    let start = std::time::Instant::now();
-    mobile::scan(c, selected, items, warnings);
-    crate::runtime::record_timing(timings, "mobile", start);
     for r in &c.registered {
         if !r.path.exists() {
             continue;
@@ -259,9 +255,19 @@ pub fn remove(i: &Item, c: &Config) -> Result<String> {
             Ok("Removed disposable environment through Poetry".into())
         }
         Action::Cache { manager, root } => caches::remove(manager, root, c),
-        Action::Runtime { uuid, build } => mobile::remove_runtime(uuid, build, c),
-        Action::Sdk { root, package } => mobile::remove_sdk(root, package),
     }
+}
+
+pub fn preview(i: &Item) -> Result<String> {
+    if i.evidence.metadata.get("manager").and_then(|v| v.as_str()) == Some("homebrew") {
+        return tool("brew", &["cleanup", "--dry-run"], None);
+    }
+    Ok(format!(
+        "{}\n{}\n{}",
+        i.id,
+        i.reason,
+        serde_json::to_string_pretty(&i.evidence.action)?
+    ))
 }
 
 // Upper estimate for human-formatted native sizes. Keep the original text alongside it.

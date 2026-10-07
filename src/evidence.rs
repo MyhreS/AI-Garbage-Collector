@@ -41,14 +41,6 @@ pub enum Action {
         manager: String,
         root: PathBuf,
     },
-    Runtime {
-        uuid: String,
-        build: String,
-    },
-    Sdk {
-        root: PathBuf,
-        package: String,
-    },
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
