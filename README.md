@@ -2,7 +2,7 @@
 
 **Clean up the storage AI coding agents leave behind.**
 
-`aigc` is a local CLI and hourly garbage collector for abandoned worktrees, dependencies, build output and virtual devices. Keep using the storage you have—no cloud, subscription or AI model required.
+`aigc` is a local CLI and hourly garbage collector for abandoned worktrees, dependencies, build output and caches. Keep using the storage you have—no cloud, subscription or AI model required.
 
 > **Default cleanup:** all implemented cleanup categories are enabled. Worktrees idle for 7 days can be deleted immediately after installation, including uncommitted and ignored files, **without recovery**. Detected activity, open PRs and aigc pins protect them. Failed PR lookups do **not** block deletion by default.
 
@@ -61,7 +61,7 @@ Cleanup passes have no item-count or byte cap. Skipped resources do not stop lat
 | Git worktrees, including Codex and Claude | Remove after 7 days since the latest file write, HEAD commit or detected use. Clean and dirty trees are removed without recovery archives; dirty trees use force removal. |
 | Recognized dependencies and build output | Remove eligible `node_modules`, Rust/Swift/Next.js output and Xcode DerivedData after observed inactivity; protect tracked source. |
 | Python/Poetry environments | Automatically remove after 7 days since the latest file write or detected use, including the first scan. Orphaned Poetry environments are included. |
-| Devices, runtimes, SDKs | Automatically collect eligible resources after activity and dependency checks. Xcode/iOS support is macOS-only. |
+| iOS simulators, simulator runtimes, Android emulators and SDKs | **Never touched.** Not inventoried or removed. |
 | pip, pnpm and npm caches | Automatic native maintenance after inactivity and cooldown checks, regardless of cache size. |
 | Other manager caches, browsers, Xcode archives and recovery bundles | Report only or protected. |
 

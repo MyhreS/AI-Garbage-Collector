@@ -75,21 +75,7 @@ Supported kinds are `scratch`, `builds` and `python`. Registration records owner
 
 ## Mobile resources
 
-### Simulator runtimes
-
-The scanner connects simulator runtime identifiers/builds to native runtime disk UUIDs where the installed schema exposes them. Every retained simulator device referencing a runtime protects it, including shut-down devices. Unknown runtime schemas remain protected.
-
-Runtime removal requires observed inactivity, no retained device references and fresh native identity checks. It uses exact-UUID `simctl runtime delete`; it never sweeps mounted runtime directories. Native deletion can otherwise shut down devices, so consumer checks are required. An external process can still race a final check; cooperate through reservations and pins.
-
-`preview RUNTIME-ID` uses the native age-based `--dry-run` when supported. That preview can list all native age candidates and is not an aigc-approved deletion list.
-
-### Android
-
-Installed packages come from `sdkmanager --list_installed` under the configured SDK root. The adapter maps AVD system-image references and simple literal Gradle platform/version declarations. Dynamic or absent declarations protect packages. Implicit build-tool/CMake requirements and undeclared NDK versions remain conservative.
-
-SDK removal requires no retained known consumers, complete inventory and the normal observation period. It invokes native package-ID uninstall after revalidating roots and references. Custom Gradle plugins and undiscovered projects require explicit pins/requirements; installing an older SDK does not make it garbage.
-
-Existing disposable-AVD handling remains, including deferral while an emulator may be running. Device app data is not recoverable after an authorized device deletion.
+Simulators, simulator runtimes, Android emulators and SDK packages are outside scope. They are not inventoried or removed; manage them with Xcode, `simctl`, Android Studio or `sdkmanager`.
 
 ## Reservations and races
 
@@ -112,4 +98,4 @@ The release does not implement exact agent-session attribution, automatic mutabl
 
 ## Platform boundaries
 
-See the README platform section for Windows activity limitations and persistent reservations. Xcode and iOS tools are macOS-only. Android uses ANDROID_HOME/ANDROID_SDK_ROOT or the platform default SDK path; Windows command-line tools use .bat launchers. Windows junctions/reparse points prevent removal, and sizes are logical bytes. Ubuntu needs lsof, ps and a systemd user session for scheduled collection.
+See the README platform section for Windows activity limitations and persistent reservations. Xcode DerivedData handling is macOS-only. Windows junctions/reparse points prevent removal, and sizes are logical bytes. Ubuntu needs lsof, ps and a systemd user session for scheduled collection.
