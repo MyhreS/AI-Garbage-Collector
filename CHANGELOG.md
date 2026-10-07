@@ -1,5 +1,9 @@
 # Changes
 
+## 0.7.9
+
+- Fix the Windows build after removing device cleanup.
+
 ## 0.7.8
 
 - Stop inventorying and removing iOS simulators, simulator runtimes, Android AVDs and Android SDK packages. Reinstalling them is slow and they were being deleted while still wanted.

@@ -1,7 +1,7 @@
 use crate::{
     config::{Config, home},
     policy::Status,
-    runtime::{command, git, now},
+    runtime::{git, now},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,7 @@ impl Activity {
 #[cfg(unix)]
 pub fn activity(state_dir: &Path) -> Activity {
     let uid = unsafe { libc::getuid() }.to_string();
-    let files = command("lsof", &["-nP", "-a", "-u", &uid, "-Fpcfn"]);
+    let files = crate::runtime::command("lsof", &["-nP", "-a", "-u", &uid, "-Fpcfn"]);
     let procs = crate::platform::process_names();
     let mut a = Activity {
         reliable: files.is_ok() && procs.is_ok(),
