@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.7.8
 
 - Stop inventorying and removing iOS simulators, simulator runtimes, Android AVDs and Android SDK packages. Reinstalling them is slow and they were being deleted while still wanted.
 
