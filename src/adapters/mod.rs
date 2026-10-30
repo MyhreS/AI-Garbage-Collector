@@ -241,6 +241,14 @@ pub fn remove(i: &Item, c: &Config) -> Result<String> {
                         == environment.to_string_lossy()),
                 "Poetry association changed"
             );
+            // Poetry lists an in-project .venv but `env remove` rejects it as
+            // not belonging to the project, so remove that directory directly.
+            if environment.parent() == Some(project.as_path())
+                && environment.file_name() == Some(std::ffi::OsStr::new(".venv"))
+            {
+                fs::remove_dir_all(environment)?;
+                return Ok("Removed in-project Poetry environment".into());
+            }
             let executable = environment.join(if cfg!(windows) {
                 "Scripts/python.exe"
             } else {

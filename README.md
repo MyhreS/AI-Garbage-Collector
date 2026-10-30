@@ -54,6 +54,10 @@ aigc service status            # Check the background scheduler
 
 Cleanup passes have no item-count or byte cap. Skipped resources do not stop later candidates.
 
+## Agent skill
+
+[`skills/aigc/SKILL.md`](skills/aigc/SKILL.md) teaches coding agents to inspect, preview and protect resources with `aigc`. Copy the `skills/aigc` folder into your agent's skills directory, for example `~/.claude/skills/aigc` for Claude Code.
+
 ## Cleanup scope
 
 | Resource | Behavior |
