@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.7.10
 
 - Remove in-project Poetry `.venv` environments directly; `poetry env remove` rejected them and the collector retried every hour.
 - Write background collector output to `collector.log` in the state directory on macOS.
