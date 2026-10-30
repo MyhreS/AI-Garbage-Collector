@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased
+
+- Remove in-project Poetry `.venv` environments directly; `poetry env remove` rejected them and the collector retried every hour.
+- Write background collector output to `collector.log` in the state directory on macOS.
+- Add an agent skill in `skills/aigc/SKILL.md`.
+
 ## 0.7.9
 
 - Fix the Windows build after removing device cleanup.

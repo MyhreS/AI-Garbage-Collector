@@ -40,11 +40,14 @@ pub fn install() -> Result<()> {
 <key>RunAtLoad</key><true/><key>StartInterval</key><integer>3600</integer>
 <key>WorkingDirectory</key><string>{}</string>
 <key>ProcessType</key><string>Background</string><key>LowPriorityIO</key><true/>
+<key>StandardOutPath</key><string>{}</string><key>StandardErrorPath</key><string>{}</string>
 <key>EnvironmentVariables</key><dict><key>PATH</key><string>{}</string><key>HOME</key><string>{}</string></dict>
 </dict></plist>
 "#,
         xml(&exe.to_string_lossy()),
         xml(&home().to_string_lossy()),
+        xml(&state.join("collector.log").to_string_lossy()),
+        xml(&state.join("collector.log").to_string_lossy()),
         xml(&path),
         xml(&home().to_string_lossy())
     );
